@@ -1,0 +1,10 @@
+<div class="card" style="position:fixed;inset:0;margin:40px auto;max-width:900px;height:80vh;overflow:auto;border:1px solid #2a356b">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+    <div class="h1" style="font-size:18px">Edit Data JSON</div>
+    <div>
+      <button class="btn" (click)="onSave()">Save</button>
+      <button class="btn" (click)="close.emit()">Close</button>
+    </div>
+  </div>
+  <textarea style="width:100%;height:calc(100% - 48px);margin-top:8px;background:#0a1230;color:#e6ebff;border:1px solid #2a356b;border-radius:12px;padding:12px;font-family:ui-monospace,Consolas,monospace;font-size:12px" [(ngModel)]="text"></textarea>
+</div>

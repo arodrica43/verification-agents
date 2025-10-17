@@ -1,0 +1,29 @@
+<div class="grid" style="grid-template-columns: 1fr; gap: 12px;">
+  <div class="card">
+    <div class="h1" style="font-size:18px;margin-bottom:8px">Drag each <b>Technology</b> to the best <b>Use Case</b></div>
+    <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+      <div>
+        <div class="badge">Technologies</div>
+        <div cdkDropList [cdkDropListData]="source()" class="usecase" (cdkDropListDropped)="drop($event)">
+          <div class="tech-card" cdkDrag *ngFor="let t of source()">{{t.name}} <span class="pill">{{t.type}}</span><div class="hint">{{t.rationale}}</div></div>
+        </div>
+      </div>
+      <div>
+        <div class="badge">Use Cases</div>
+        <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="card" *ngFor="let c of cases">
+            <div class="h1" style="font-size:14px">{{c.text}} <span class="pill">{{c.difficulty || 'all'}}</span></div>
+            <div class="usecase" cdkDropList [cdkDropListData]="targets()[c.id]" (cdkDropListDropped)="drop($event, c.id)">
+              <div class="tech-card" cdkDrag *ngFor="let t of targets()[c.id]">{{t.name}}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn primary" (click)="submit()">Submit</button>
+      <button class="btn" (click)="reset()">Reset</button>
+      <div *ngIf="scored()" class="badge">Score: <b>{{scored()?.score}}</b> / {{scored()?.total}}</div>
+    </div>
+  </div>
+</div>
