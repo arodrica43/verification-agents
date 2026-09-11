@@ -68,6 +68,8 @@ export type AgentRun = {
   claims: Record<string, unknown>[];
   lean_skeleton?: string | null;
   candidate_proof?: Record<string, unknown> | null;
+  lean_project_path?: string | null;
+  verification_report?: Record<string, unknown> | null;
   lean_verified?: boolean;
   certificate_ready?: boolean;
   pending_human_review?: boolean;

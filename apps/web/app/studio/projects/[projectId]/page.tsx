@@ -10,7 +10,7 @@ import type { AgentRun, AgentRunSummary, Project } from "@/lib/types";
 const PIPELINE: { graph: AgentRun["graph"]; label: string; needsText?: boolean }[] = [
   { graph: "problem_modelling", label: "1. Model system", needsText: true },
   { graph: "formalization", label: "2. Formalize claims" },
-  { graph: "proof", label: "3. Propose proof" },
+  { graph: "proof", label: "3. Verify with Lean" },
   { graph: "certification", label: "4. Prepare certificate" },
 ];
 
@@ -69,15 +69,13 @@ export default function ProjectStudioPage() {
     setBusy(true);
     setMessage(null);
     try {
-      const seed =
-        latest && latest.status === "completed" ? latest.run_id : undefined;
+      const seed = latest?.run_id;
       const body: Record<string, unknown> = {
         organization_id: project.organization_id,
         workspace_id: project.workspace_id,
         project_id: project.id,
         graph,
         problem_text: problemText,
-        lean_verified: latest?.lean_verified ?? false,
       };
       if (graph !== "problem_modelling" && seed) {
         body.seed_from_run_id = seed;
@@ -88,23 +86,55 @@ export default function ProjectStudioPage() {
       });
       setLatest(run);
       const failed = run.status === "failed";
+      const leanNote =
+        graph === "proof"
+          ? run.lean_verified
+            ? " lean_verified=true — ready to certify."
+            : " lean_verified=false — install Lean/lake or fix the model, then retry."
+          : "";
       setMessage({
-        tone: failed ? "error" : "ok",
+        tone: failed || (graph === "proof" && !run.lean_verified) ? "error" : "ok",
         text:
           run.status === "interrupted"
             ? `Paused for review at ${run.interrupt_node ?? "gate"}.`
             : failed
               ? run.error ||
                 (graph === "certification"
-                  ? "Certification blocked: Lean has not verified the proof obligations yet (axioms/stubs are not proofs)."
+                  ? "Certification blocked: run Verify with Lean until lean_verified=true."
                   : `Finished ${graph} (failed).`)
-              : `Finished ${graph} (${run.status}).`,
+              : `Finished ${graph} (${run.status}).${leanNote}`,
       });
       await refresh();
     } catch (err) {
       setMessage({
         tone: "error",
         text: err instanceof ApiError ? err.message : "Agent run failed.",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function issueVerifiedCert() {
+    if (!latest?.run_id || !latest.lean_verified) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const data = await apiFetch<{
+        certificate_id?: string;
+        lean_verified?: boolean;
+      }>(`/api/v1/agents/runs/${encodeURIComponent(latest.run_id)}/certificate`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      setMessage({
+        tone: "ok",
+        text: `Lean-verified certificate ${data.certificate_id ?? ""} issued (lean=${Boolean(data.lean_verified)}).`,
+      });
+    } catch (err) {
+      setMessage({
+        tone: "error",
+        text: err instanceof ApiError ? err.message : "Verified certificate issue failed.",
       });
     } finally {
       setBusy(false);
@@ -299,21 +329,41 @@ export default function ProjectStudioPage() {
                   lean_verified={String(latest.lean_verified)} · certificate_ready=
                   {String(latest.certificate_ready)} · history:{" "}
                   {latest.history.join(" → ") || "—"}
+                  {latest.lean_project_path
+                    ? ` · lean_project=${latest.lean_project_path}`
+                    : ""}
                 </p>
+                {latest.verification_report ? (
+                  <>
+                    <h3 className="subhead">Lean verification report</h3>
+                    <pre className="code-block">
+                      {JSON.stringify(latest.verification_report, null, 2)}
+                    </pre>
+                  </>
+                ) : null}
               </section>
             )}
 
             <section className="panel" aria-labelledby="cert-heading">
               <h2 id="cert-heading">Certificate</h2>
               <p className="note">
-                Independent Lean verification is required for production
-                certificates. For local demos you can still issue the agent-policy
-                demo bundle.
+                Production certificates require{" "}
+                <code>lean_verified=true</code> from step 3 (independent{" "}
+                <code>lake build</code>). Demo issuance bypasses that gate for
+                local smoke tests only.
               </p>
               <div className="form-actions">
                 <button
                   type="button"
                   className="btn btn-primary"
+                  disabled={busy || !latest?.lean_verified}
+                  onClick={() => void issueVerifiedCert()}
+                >
+                  Issue Lean-verified certificate
+                </button>
+                <button
+                  type="button"
+                  className="btn"
                   disabled={busy}
                   onClick={() => void issueDemoCert()}
                 >

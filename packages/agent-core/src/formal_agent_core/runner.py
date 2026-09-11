@@ -173,6 +173,8 @@ class GraphRunner:
             "claims",
             "lean_skeleton",
             "candidate_proof",
+            "lean_project_path",
+            "verification_report",
             "needs_independent_verification",
             "lean_verified",
             "certificate_ready",

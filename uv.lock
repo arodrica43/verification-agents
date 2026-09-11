@@ -592,6 +592,7 @@ name = "formal-agent-core"
 version = "0.1.0"
 source = { editable = "packages/agent-core" }
 dependencies = [
+    { name = "formal-proof-service" },
     { name = "formal-schemas" },
     { name = "formal-shared" },
     { name = "pydantic" },
@@ -604,6 +605,7 @@ langgraph = [
 
 [package.metadata]
 requires-dist = [
+    { name = "formal-proof-service", editable = "services/proof-service" },
     { name = "formal-schemas", editable = "packages/schemas" },
     { name = "formal-shared", editable = "packages/shared" },
     { name = "langgraph", marker = "extra == 'langgraph'", specifier = ">=0.2" },
@@ -619,6 +621,7 @@ dependencies = [
     { name = "alembic" },
     { name = "cryptography" },
     { name = "fastapi" },
+    { name = "formal-agent-core" },
     { name = "formal-certificate-sdk" },
     { name = "formal-certificate-service" },
     { name = "formal-domain" },
@@ -639,6 +642,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.14" },
     { name = "cryptography", specifier = ">=43" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "formal-agent-core", editable = "packages/agent-core" },
     { name = "formal-certificate-sdk", editable = "packages/certificate-sdk" },
     { name = "formal-certificate-service", editable = "services/certificate-service" },
     { name = "formal-domain", editable = "packages/domain" },

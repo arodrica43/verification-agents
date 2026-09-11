@@ -7,6 +7,7 @@ dependencies = [
   "pydantic>=2.10",
   "formal-schemas",
   "formal-shared",
+  "formal-proof-service",
 ]
 
 [project.optional-dependencies]

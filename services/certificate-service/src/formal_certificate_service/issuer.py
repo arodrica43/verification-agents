@@ -412,3 +412,293 @@ def issue_demo_certificate(
         ),
         out,
     )
+
+
+def issue_lean_project_certificate(
+    lean_project: Path,
+    output_dir: Path,
+    *,
+    title: str,
+    description: str,
+    entities: list[dict[str, Any]] | None = None,
+    goals: list[dict[str, Any]] | None = None,
+    claims: list[dict[str, Any]] | None = None,
+    assumptions_in: list[dict[str, Any]] | None = None,
+    theorem_name: str | None = None,
+    lean_module: str = "GeneratedModel",
+    signing_secret: str | None = None,
+    signing_key_id: str | None = None,
+    ed25519_private_key: bytes | None = None,
+    ed25519_public_key: bytes | None = None,
+    require_lean: bool = True,
+    allow_unverified: bool = False,
+    run_lean: bool | None = None,
+    proof_result: ProofCheckResult | None = None,
+    timeout_seconds: int = 600,
+    forbidden_constructs: list[str] | None = None,
+) -> Path:
+    """Issue a certificate for an arbitrary Lean Lake project (agent-produced).
+
+    Production: ``require_lean=True`` and ``allow_unverified=False``; lake must
+    succeed without forbidden constructs (sorry/admit/axiom/…).
+    """
+    if require_lean is False and allow_unverified is False:
+        raise ValueError("require_lean=False is only valid together with allow_unverified=True")
+    if run_lean is None:
+        run_lean = not allow_unverified
+
+    lean_project = Path(lean_project)
+    if not lean_project.exists():
+        raise FormalPlatformError(
+            ErrorCode.DEPENDENCY_MISSING,
+            f"Lean project does not exist: {lean_project}",
+        )
+
+    toolchain = "leanprover/lean4:v4.14.0"
+    tc_path = lean_project / "lean-toolchain"
+    if tc_path.exists():
+        toolchain = tc_path.read_text(encoding="utf-8").strip()
+
+    check = proof_result
+    if check is None and run_lean:
+        backend = LeanLakeBackend()
+        request = ProofCheckRequest(
+            project_path=str(lean_project),
+            timeout_seconds=timeout_seconds,
+            forbidden_constructs=forbidden_constructs
+            or ["sorry", "admit", "native_decide", "axiom"],
+        )
+        try:
+            check = asyncio.run(backend.check(request))
+        except FormalPlatformError:
+            if require_lean:
+                raise
+            check = None
+
+    lean_verified = bool(check and check.success and not check.contains_forbidden)
+    if not lean_verified and not allow_unverified:
+        detail: dict[str, Any] = {}
+        if check is not None:
+            detail = {
+                "exit_code": check.exit_code,
+                "forbidden_matches": check.forbidden_matches,
+                "stderr_tail": (check.stderr or "")[-2000:],
+            }
+        raise FormalPlatformError(
+            ErrorCode.LEAN_COMPILATION_ERROR
+            if check and not check.contains_forbidden
+            else ErrorCode.VERIFICATION_ENVIRONMENT_ERROR,
+            "Independent Lean verification failed; certificate not issued",
+            details=detail,
+        )
+
+    entities = entities or []
+    goals = goals or []
+    claims = claims or []
+    assumptions_in = assumptions_in or []
+
+    system_entities = [
+        SystemEntity(
+            id=str(e.get("id", f"ent-{i}")),
+            name=str(e.get("name", "entity")),
+            description=str(e.get("notes") or e.get("kind") or ""),
+        )
+        for i, e in enumerate(entities[:32])
+    ] or [
+        SystemEntity(id="ent-system", name="System", description="Modelled system")
+    ]
+
+    goal_items = [
+        GoalItem(
+            id=str(g.get("id", f"goal-{i}")),
+            statement=str(g.get("statement", "goal")),
+        )
+        for i, g in enumerate(goals[:16])
+    ] or [GoalItem(id="goal-1", statement=title)]
+
+    claim_items = [
+        ClaimItem(
+            id=str(c.get("id", f"claim-{i}")),
+            statement=str(c.get("statement", "claim")),
+        )
+        for i, c in enumerate(claims[:16])
+    ] or [ClaimItem(id="claim-1", statement=title)]
+
+    problem = ProblemSpec(
+        title=title[:200],
+        description=description[:2000] or title,
+        system=SystemModel(entities=system_entities),
+        goals=goal_items,
+        claims=claim_items,
+        scope=ProblemScope(
+            in_scope=["Lean model and discharged theorems under stated hypotheses"],
+            out_of_scope=["Empirical binding of live plant telemetry to the model"],
+        ),
+    )
+
+    assumptions = [
+        Assumption(
+            id=str(a.get("id", f"asm-{i}")),
+            statement=str(a.get("statement", "")),
+            formal_representation=str(a.get("id", "")),
+            category=AssumptionCategory.USER_ASSERTED,
+            status=AssumptionStatus.ACCEPTED,
+            validation_method="agent_modelling",
+            reviewer="agent-issuer",
+        )
+        for i, a in enumerate(assumptions_in[:24])
+    ]
+    if not assumptions:
+        assumptions = [
+            Assumption(
+                id="asm-model",
+                statement="The generated Lean structures accurately capture the modelled system",
+                formal_representation=lean_module,
+                category=AssumptionCategory.USER_ASSERTED,
+                status=AssumptionStatus.ACCEPTED,
+                validation_method="human_review",
+                reviewer="agent-issuer",
+            )
+        ]
+
+    lean_files = sorted(lean_project.glob("*.lean"))
+    lean_src = b"".join(p.read_bytes() for p in lean_files) if lean_files else b""
+    lean_hash = sha256_hex(lean_src)
+    problem_hash = content_hash(problem.model_dump(mode="json"))
+    assumption_hashes = [content_hash(a.model_dump(mode="json")) for a in assumptions]
+
+    primary = theorem_name or (
+        f"FormalPlatform.Model.{claim_items[0].id}" if claim_items else f"{lean_module}.main"
+    )
+    checked_at = (
+        check.checked_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
+        if check is not None and getattr(check, "checked_at", None)
+        else datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    )
+    verification_report: dict[str, Any] = {
+        "success": lean_verified,
+        "backend": "lean4",
+        "theorem": primary,
+        "checked_at": checked_at,
+        "duration_ms": check.duration_ms if check else None,
+        "exit_code": check.exit_code if check else None,
+        "contains_forbidden": check.contains_forbidden if check else None,
+        "forbidden_matches": check.forbidden_matches if check else [],
+        "environment": check.environment if check else {},
+        "note": (
+            "Independent lake build succeeded; Lean kernel verification recorded."
+            if lean_verified
+            else "Issued with allow_unverified=True; lake success was not required."
+        ),
+    }
+    verification_hash = content_hash(verification_report)
+
+    graph = ProvenanceGraph()
+    graph.add_node(problem_hash)
+    graph.add_node(lean_hash)
+    graph.add_node(verification_hash)
+    for h in assumption_hashes:
+        graph.add_node(h)
+        graph.add_edge(
+            ProvenanceEdge(
+                source_hash=lean_hash,
+                target_hash=h,
+                relation=ProvenanceRelation.ASSUMES,
+            )
+        )
+    graph.add_edge(
+        ProvenanceEdge(
+            source_hash=lean_hash,
+            target_hash=problem_hash,
+            relation=ProvenanceRelation.FORMALIZES,
+        )
+    )
+    graph.add_edge(
+        ProvenanceEdge(
+            source_hash=verification_hash,
+            target_hash=lean_hash,
+            relation=ProvenanceRelation.VERIFIED_BY,
+        )
+    )
+
+    proof_assurance = (
+        AssuranceLayer.FORMALLY_VERIFIED if lean_verified else AssuranceLayer.ASSERTED
+    )
+    env_toolchain = (check.environment.get("toolchain") if check else None) or toolchain
+    claim_statement = claim_items[0].statement
+
+    cert = Certificate(
+        certificate_id=new_id(),
+        claim=ClaimBlock(id=claim_items[0].id, statement=claim_statement),
+        scope=ScopeBlock(
+            description="Formal model only; empirical compliance is out of scope",
+            in_scope=[primary],
+            out_of_scope=["Live telemetry binding"],
+        ),
+        formal_theorem=FormalTheoremRef(
+            name=primary,
+            lean_statement=primary,
+            human_readable=claim_statement,
+            source_path=lean_files[0].name if lean_files else f"{lean_module}.lean",
+        ),
+        assumptions=assumptions,
+        evidence=[
+            EvidenceSummary(
+                id="ev-lean-proof",
+                description=(
+                    f"Independent lake build of {lean_module}"
+                    if lean_verified
+                    else f"Lean formalization of {lean_module} (unverified)"
+                ),
+                content_hash=lean_hash,
+                assurance_layer=proof_assurance,
+            ),
+            EvidenceSummary(
+                id="ev-assumptions",
+                description="Accepted modelling assumptions (not Lean-proved)",
+                content_hash=content_hash([a.model_dump(mode="json") for a in assumptions]),
+                assurance_layer=AssuranceLayer.ASSERTED,
+            ),
+        ],
+        formal_model=FormalModelRef(
+            id="model-generated",
+            description=title,
+            content_hash=lean_hash,
+            lean_module=lean_module,
+        ),
+        proof=ProofRef(
+            theorem_name=primary,
+            lean_source_hash=lean_hash,
+            verification_report_hash=verification_hash,
+            contains_sorry=False,
+            contains_admit=False,
+        ),
+        verification_environment=VerificationEnvironment(
+            lean_version=env_toolchain,
+            toolchain=env_toolchain,
+            verified_at=datetime.now(UTC) if lean_verified else None,
+            dependency_manifest_hash=None,
+        ),
+        provenance=ProvenanceBlock(root_hash="", edges=graph.sorted_edge_dicts()),
+    )
+
+    secret = signing_secret or os.environ.get(
+        "CERTIFICATE_SIGNING_SECRET", "dev_signing_secret_change_me_before_prod"
+    )
+    key_id = signing_key_id or os.environ.get("CERTIFICATE_SIGNING_KEY_ID", "dev-key-1")
+    builder = CertificateBundleBuilder()
+    return builder.build(
+        BundleInputs(
+            certificate=cert,
+            problem=problem,
+            assumptions=[a.model_dump(mode="json") for a in assumptions],
+            provenance_graph=graph,
+            lean_project_dir=lean_project,
+            verification_report=verification_report,
+            signing_key_id=key_id,
+            signing_secret=secret,
+            ed25519_private_key=ed25519_private_key,
+            ed25519_public_key=ed25519_public_key,
+        ),
+        output_dir,
+    )

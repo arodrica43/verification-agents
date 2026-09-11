@@ -69,9 +69,11 @@ class AgentGraphState(BaseModel):
     # Formal / proof-related fields (agent-produced; Lean remains sole verifier)
     lean_skeleton: str | None = None
     candidate_proof: dict[str, Any] | None = None
+    lean_project_path: str | None = None
+    verification_report: dict[str, Any] | None = None
     needs_independent_verification: bool = False
     lean_verified: bool = False
-    """Set only by an independent Lean kernel check — never by agent graphs."""
+    """Set only by an independent Lean kernel / lake check — never self-attested."""
 
     certificate_ready: bool = False
     error: str | None = None

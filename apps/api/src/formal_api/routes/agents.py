@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import tempfile
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -20,6 +23,8 @@ from formal_agent_core import (
 )
 from formal_api.auth import PrincipalDep, set_rls_organization
 from formal_api.deps import get_db_session
+from formal_api.settings import get_settings
+from formal_certificate_service import issue_lean_project_certificate
 from formal_shared.errors import FormalPlatformError
 from formal_store.agents import AgentRunStore, new_run_id
 from formal_store.identity import IdentityStore
@@ -34,12 +39,17 @@ class StartAgentBody(BaseModel):
     project_id: str
     graph: GraphName = GraphName.PROBLEM_MODELLING
     problem_text: str = ""
+    # Deprecated: clients cannot self-attest verification. Ignored.
     lean_verified: bool = False
     seed_from_run_id: str | None = None
 
 
 class ResumeAgentBody(BaseModel):
     updates: dict[str, Any] = Field(default_factory=dict)
+
+
+class IssueFromRunBody(BaseModel):
+    timeout_seconds: int = Field(default=600, ge=30, le=1800)
 
 
 class DbCheckpointStore:
@@ -137,6 +147,10 @@ async def start_agent_run(
             )
         seed = AgentGraphState.model_validate(raw)
 
+    # lean_verified is never client-attested. Proof graph sets it via lake;
+    # certification may inherit a prior verified seed.
+    inherited_verified = bool(seed.lean_verified) if seed and body.graph == GraphName.CERTIFICATION else False
+
     state = AgentGraphState(
         run_id=new_run_id(),
         organization_id=body.organization_id,
@@ -150,7 +164,9 @@ async def start_agent_run(
         claims=list(seed.claims) if seed else [],
         lean_skeleton=seed.lean_skeleton if seed else None,
         candidate_proof=seed.candidate_proof if seed else None,
-        lean_verified=body.lean_verified or (seed.lean_verified if seed else False),
+        lean_project_path=seed.lean_project_path if seed else None,
+        verification_report=seed.verification_report if seed else None,
+        lean_verified=inherited_verified,
         data=dict(seed.data) if seed else {},
         status=RunStatus.PENDING,
     )
@@ -223,6 +239,106 @@ async def resume_agent_run(
             detail={"code": "agent_resume_failed", "message": str(exc)},
         ) from exc
     return _serialize(result)
+
+
+@router.post("/agents/runs/{run_id}/certificate")
+async def issue_certificate_from_run(
+    run_id: str,
+    body: IssueFromRunBody,
+    session: SessionDep,
+    principal: PrincipalDep,
+) -> dict[str, Any]:
+    """Issue a production-gated certificate from a Lean-verified agent run."""
+    store = AgentRunStore(session)
+    raw = await store.get_state(run_id)
+    if raw is None:
+        raise HTTPException(status_code=404, detail={"code": "not_found"})
+    state = AgentGraphState.model_validate(raw)
+    await _authorize_project(
+        session,
+        organization_id=state.organization_id,
+        workspace_id=state.workspace_id,
+        project_id=state.project_id,
+        principal_id=principal.principal_id,
+    )
+    if not state.lean_verified:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "lean_not_verified",
+                "message": (
+                    "Certificate requires lean_verified=True from an independent "
+                    "lake build (run the proof graph first)."
+                ),
+            },
+        )
+    project_path = state.lean_project_path
+    if not project_path or not Path(project_path).exists():
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "lean_project_missing",
+                "message": "Verified run is missing lean_project_path on disk",
+            },
+        )
+
+    cfg = get_settings()
+    require_lean = True
+    allow_unverified = False
+    if not cfg.is_production and not cfg.require_lean_for_issuance:
+        # Still re-run lake when issuing from an agent run; do not allow unverified.
+        require_lean = True
+        allow_unverified = False
+
+    ed_priv = (
+        bytes.fromhex(cfg.certificate_ed25519_private_key_hex)
+        if cfg.certificate_ed25519_private_key_hex
+        else None
+    )
+    theorem = None
+    if state.candidate_proof and isinstance(state.candidate_proof, dict):
+        theorem = state.candidate_proof.get("theorem")
+
+    title = "Verified claim"
+    if state.goals:
+        title = str(state.goals[0].get("statement", title))[:200]
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="formal-agent-cert-") as tmp:
+            bundle = issue_lean_project_certificate(
+                Path(project_path),
+                Path(tmp) / "certificate-demo",
+                title=title,
+                description=state.problem_text or "Agent-formalized system",
+                entities=state.entities,
+                goals=state.goals,
+                claims=state.claims,
+                assumptions_in=state.assumptions,
+                theorem_name=str(theorem) if theorem else None,
+                signing_secret=cfg.certificate_signing_secret,
+                signing_key_id=cfg.certificate_signing_key_id,
+                ed25519_private_key=ed_priv,
+                require_lean=require_lean,
+                allow_unverified=allow_unverified,
+                timeout_seconds=body.timeout_seconds,
+            )
+            certificate = json.loads((bundle / "certificate.json").read_text(encoding="utf-8"))
+            verification = json.loads(
+                (bundle / "verification" / "verification.json").read_text(encoding="utf-8")
+            )
+            return {
+                "certificate_id": certificate.get("certificate_id"),
+                "root_hash": certificate.get("root_hash"),
+                "lean_verified": bool(verification.get("success")),
+                "issued_by": principal.principal_id,
+                "run_id": run_id,
+                "certificate": certificate,
+                "verification": verification,
+            }
+    except FormalPlatformError as exc:
+        raise HTTPException(status_code=400, detail=exc.to_dict()) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"message": str(exc)}) from exc
 
 
 @router.get("/projects/{project_id}/agent-runs")
