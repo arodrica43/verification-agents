@@ -165,7 +165,7 @@ async def start_agent_run(
     runner = GraphRunner(_build_graph(body.graph), checkpoints=DbCheckpointStore(store))
     try:
         result = await runner.run(state)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise HTTPException(
             status_code=400,
             detail={"code": "agent_run_failed", "message": str(exc)},
@@ -216,7 +216,7 @@ async def resume_agent_run(
     runner = GraphRunner(_build_graph(state.graph), checkpoints=DbCheckpointStore(store))
     try:
         result = await runner.resume(run_id, updates=body.updates or None)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise HTTPException(
             status_code=400,
             detail={"code": "agent_resume_failed", "message": str(exc)},
