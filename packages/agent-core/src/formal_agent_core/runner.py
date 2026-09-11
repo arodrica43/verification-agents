@@ -178,6 +178,8 @@ class GraphRunner:
             "needs_independent_verification",
             "lean_verified",
             "certificate_ready",
+            "certificate_id",
+            "issued_certificate",
             "artifact_ids",
             "problem_text",
         ):

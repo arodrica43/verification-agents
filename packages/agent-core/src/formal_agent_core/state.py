@@ -76,6 +76,8 @@ class AgentGraphState(BaseModel):
     """Set only by an independent Lean kernel / lake check — never self-attested."""
 
     certificate_ready: bool = False
+    certificate_id: str | None = None
+    issued_certificate: dict[str, Any] | None = None
     error: str | None = None
 
     # Free-form node outputs keyed by node name
