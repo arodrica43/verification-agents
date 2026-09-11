@@ -9,7 +9,11 @@ from formal_certificate_service.issuer import issue_demo_certificate
 
 
 def test_roundtrip_bundle_reproducible_hashes(tmp_path: Path) -> None:
-    bundle = issue_demo_certificate(tmp_path / "cert", lean_verified=False)
+    bundle = issue_demo_certificate(
+        tmp_path / "cert",
+        allow_unverified=True,
+        run_lean=False,
+    )
     first = verify_bundle(
         bundle,
         signing_secret="dev_signing_secret_change_me_before_prod",

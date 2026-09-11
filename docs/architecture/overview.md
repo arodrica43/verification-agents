@@ -1,7 +1,7 @@
 # Architecture Overview
 
-**Status:** Phase 0 foundation  
-**Last updated:** 2026-03-20
+**Status:** Phase 2 persistence foundation  
+**Last updated:** 2026-09-11
 
 ## Purpose
 
@@ -48,8 +48,9 @@ Never conflate:
 | `formal-domain` | Domain entities, lifecycle, trust levels |
 | `formal-provenance` | Canonicalization, hashing, DAG relations, roots |
 | `formal-certificate-sdk` | Bundle export/verify CLI |
+| `formal-store` | PostgreSQL artifacts, provenance edges, append-only audit |
 | `formal-shared` | IDs, hashing, errors, observability helpers |
-| `formal-agent-core` | LangGraph state/types (Phase 5+) |
+| `formal-agent-core` | Typed graph runner + HITL (LangGraph optional; Phase 5+) |
 | `formal-client-sdk` | Python client (later) |
 
 ## Services

@@ -1,12 +1,17 @@
 [project]
 name = "formal-agent-core"
 version = "0.1.0"
-description = "LangGraph agent core (Phase 5 scaffold)"
+description = "Typed agent graph runner with optional LangGraph (Phase 5+)"
 requires-python = ">=3.12"
 dependencies = [
   "pydantic>=2.10",
   "formal-schemas",
   "formal-shared",
+]
+
+[project.optional-dependencies]
+langgraph = [
+  "langgraph>=0.2",
 ]
 
 [build-system]

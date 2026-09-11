@@ -7,6 +7,10 @@ dependencies = [
   "formal-certificate-sdk",
   "formal-schemas",
   "formal-provenance",
+  "formal-proof-service",
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "httpx>=0.28",
 ]
 
 [build-system]

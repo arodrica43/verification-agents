@@ -1,0 +1,100 @@
+# Production-oriented overlay. Use with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Requires a populated .env with strong secrets (see docs/operations/production.md).
+
+services:
+  postgres:
+    ports: []
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+
+  minio:
+    ports: []
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+
+  redis:
+    ports: []
+
+  proof-service:
+    ports: []
+    environment:
+      PLATFORM_ENV: production
+      PROOF_ALLOWED_ROOTS: /lean
+      PROOF_SERVICE_TOKEN: ${PROOF_SERVICE_TOKEN:?set PROOF_SERVICE_TOKEN}
+    volumes:
+      - lean_data:/lean:ro
+
+  certificate-service:
+    ports: []
+    environment:
+      PLATFORM_ENV: production
+      CERTIFICATE_SIGNING_SECRET: ${CERTIFICATE_SIGNING_SECRET:?set CERTIFICATE_SIGNING_SECRET}
+      CERTIFICATE_REMOTE_PROOF: "1"
+      PROOF_SERVICE_URL: http://proof-service:8001
+
+  retrieval-service:
+    ports: []
+
+  api:
+    environment:
+      PLATFORM_ENV: production
+      AUTO_CREATE_TABLES: "false"
+      OPENAPI_ENABLED: "false"
+      ALLOW_UNVERIFIED_ISSUANCE: "false"
+      REQUIRE_LEAN_FOR_ISSUANCE: "true"
+      API_KEYS: ${API_KEYS:?set API_KEYS}
+      API_CORS_ORIGINS: ${API_CORS_ORIGINS:?set API_CORS_ORIGINS}
+      CERTIFICATE_SIGNING_SECRET: ${CERTIFICATE_SIGNING_SECRET:?set CERTIFICATE_SIGNING_SECRET}
+      CERTIFICATE_ED25519_PRIVATE_KEY_HEX: ${CERTIFICATE_ED25519_PRIVATE_KEY_HEX:-}
+      CERTIFICATE_ED25519_PUBLIC_KEY_HEX: ${CERTIFICATE_ED25519_PUBLIC_KEY_HEX:-}
+      DEFAULT_PRINCIPAL_ID: ${DEFAULT_PRINCIPAL_ID:?set DEFAULT_PRINCIPAL_ID}
+      PROOF_ALLOWED_ROOTS: /lean
+      PROOF_SERVICE_URL: http://proof-service:8001
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    command: ["/app/entrypoint-api.sh"]
+    ports:
+      - "${API_PUBLISH_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - lean_data:/lean:ro
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.worker
+    environment:
+      PLATFORM_ENV: production
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - redis
+      - api
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?set NEXT_PUBLIC_API_URL}
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      NEXT_PUBLIC_API_KEY: ${NEXT_PUBLIC_API_KEY:-}
+      NEXT_PUBLIC_PRINCIPAL_ID: ${NEXT_PUBLIC_PRINCIPAL_ID:-}
+      NEXT_PUBLIC_REQUIRE_LEAN: "true"
+    ports:
+      - "${WEB_PUBLISH_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  lean_data:

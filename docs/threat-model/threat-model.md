@@ -1,7 +1,7 @@
 # Threat Model (Initial)
 
-**Status:** living document — Phase 0  
-**Scope:** architecture threats for Phases 0–3; refine per phase.
+**Status:** living document — Phases 0–12 foundations  
+**Scope:** architecture threats; refine as OIDC and connectors land.
 
 ## Assets
 

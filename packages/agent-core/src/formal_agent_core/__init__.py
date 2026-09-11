@@ -1,30 +1,28 @@
-"""Agent core scaffold — LangGraph graphs land in Phase 5."""
+"""Agent core — typed graph runner (LangGraph optional, not required)."""
 
-from __future__ import annotations
+from formal_agent_core.graph import HAS_LANGGRAPH, NodeFn, TypedGraph
+from formal_agent_core.graphs import (
+    build_certification_graph,
+    build_formalization_graph,
+    build_problem_modelling_graph,
+    build_proof_graph,
+)
+from formal_agent_core.runner import CheckpointStore, GraphRunner, InMemoryCheckpointStore
+from formal_agent_core.state import AgentGraphState, GraphName, NodeResult, RunStatus
 
-from enum import StrEnum
-
-from pydantic import BaseModel, ConfigDict, Field
-
-
-class GraphName(StrEnum):
-    PROBLEM_MODELLING = "problem_modelling"
-    FORMALIZATION = "formalization"
-    PROOF = "proof"
-    EVIDENCE_VALIDATION = "evidence_validation"
-    CERTIFICATION = "certification"
-    RESEARCH = "research"
-
-
-class AgentGraphState(BaseModel):
-    """Typed graph state placeholder."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    run_id: str
-    organization_id: str
-    workspace_id: str
-    project_id: str
-    graph: GraphName
-    artifact_ids: list[str] = Field(default_factory=list)
-    pending_human_review: bool = False
+__all__ = [
+    "HAS_LANGGRAPH",
+    "AgentGraphState",
+    "CheckpointStore",
+    "GraphName",
+    "GraphRunner",
+    "InMemoryCheckpointStore",
+    "NodeFn",
+    "NodeResult",
+    "RunStatus",
+    "TypedGraph",
+    "build_certification_graph",
+    "build_formalization_graph",
+    "build_problem_modelling_graph",
+    "build_proof_graph",
+]

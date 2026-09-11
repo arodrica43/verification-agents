@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import shutil
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -12,12 +14,19 @@ from typing import Any
 from formal_proof_service.backend import ProofCheckRequest, ProofCheckResult
 from formal_shared.errors import ErrorCode, FormalPlatformError
 
+_IGNORE_NAMES = {".lake", ".git", "__pycache__", ".DS_Store"}
+
+
+def _ignore_build_artifacts(directory: str, names: list[str]) -> set[str]:
+    return {name for name in names if name in _IGNORE_NAMES}
+
 
 class LeanLakeBackend:
-    """Runs `lake build` in an isolated working directory.
+    """Runs `lake build` on a clean copy of the project.
 
     Production workers add network/cgroup isolation; this adapter focuses on
-    deterministic check semantics and forbidden-construct scanning.
+    deterministic check semantics, forbidden-construct scanning, and a fresh
+    working tree so generation artifacts cannot leak into verification.
     """
 
     backend_name = "lean4"
@@ -43,15 +52,32 @@ class LeanLakeBackend:
                 stderr="Forbidden constructs present in sources",
                 contains_forbidden=True,
                 forbidden_matches=forbidden,
-                environment=await self._env_info(project),
+                environment=await self._env_info(project, work_path=None),
             )
 
+        with tempfile.TemporaryDirectory(prefix="formal-lean-check-") as tmp:
+            work = Path(tmp) / "project"
+            await asyncio.to_thread(
+                shutil.copytree,
+                project,
+                work,
+                ignore=_ignore_build_artifacts,
+            )
+            return await self._lake_build(request, source=project, work=work)
+
+    async def _lake_build(
+        self,
+        request: ProofCheckRequest,
+        *,
+        source: Path,
+        work: Path,
+    ) -> ProofCheckResult:
         started = time.perf_counter()
         try:
             proc = await asyncio.create_subprocess_exec(
                 self.lake_executable,
                 "build",
-                cwd=str(project),
+                cwd=str(work),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env={**os.environ, "LEAN_ABORT_ON_PANIC": "1"},
@@ -85,12 +111,16 @@ class LeanLakeBackend:
             stderr=stderr,
             duration_ms=duration_ms,
             contains_forbidden=False,
-            environment=await self._env_info(project),
+            environment=await self._env_info(source, work_path=work),
         )
 
     async def inspect(self, project_path: str) -> dict[str, Any]:
         project = Path(project_path)
-        lean_files = sorted(str(p.relative_to(project)) for p in project.rglob("*.lean"))
+        lean_files = sorted(
+            str(p.relative_to(project))
+            for p in project.rglob("*.lean")
+            if ".lake" not in p.parts
+        )
         toolchain = None
         tc = project / "lean-toolchain"
         if tc.exists():
@@ -124,7 +154,6 @@ class LeanLakeBackend:
             for name in constructs
         }
         for lean_file in project.rglob("*.lean"):
-            # Skip lake package caches if present
             if ".lake" in lean_file.parts:
                 continue
             text = lean_file.read_text(encoding="utf-8")
@@ -133,13 +162,17 @@ class LeanLakeBackend:
                     matches.append(f"{lean_file.relative_to(project).as_posix()}:{name}")
         return matches
 
-    async def _env_info(self, project: Path) -> dict[str, Any]:
+    async def _env_info(self, project: Path, *, work_path: Path | None) -> dict[str, Any]:
         toolchain = None
         tc = project / "lean-toolchain"
         if tc.exists():
             toolchain = tc.read_text(encoding="utf-8").strip()
-        return {
+        info: dict[str, Any] = {
             "toolchain": toolchain,
             "lake_executable": self.lake_executable,
             "project_path": str(project.resolve()),
+            "isolated_workdir": work_path is not None,
         }
+        if work_path is not None:
+            info["workdir"] = str(work_path.resolve())
+        return info

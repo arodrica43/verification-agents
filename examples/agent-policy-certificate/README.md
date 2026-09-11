@@ -12,11 +12,17 @@ Proof contains **no** `sorry`.
 
 ## Bundle
 
+Issuance **requires** an independent `lake build` by default:
+
 ```bash
 python scripts/build_demo_certificate.py
-uv run formal-cert verify examples/agent-policy-certificate/certificate-demo
-# With Lean:
 uv run formal-cert verify examples/agent-policy-certificate/certificate-demo --lean
+```
+
+Offline scaffolding (records `verification.success=false`):
+
+```bash
+python scripts/build_demo_certificate.py --allow-unverified --skip-lean
 ```
 
 ## Trust boundary reminder

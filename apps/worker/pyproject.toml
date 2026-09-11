@@ -1,0 +1,29 @@
+[project]
+name = "formal-worker"
+version = "0.1.0"
+description = "Async agent job worker for Formal Platform graphs"
+requires-python = ">=3.12"
+dependencies = [
+  "formal-agent-core",
+  "formal-shared",
+  "pydantic>=2.10",
+  "pydantic-settings>=2.6",
+]
+
+[project.optional-dependencies]
+redis = [
+  "redis>=5.0",
+]
+
+[project.scripts]
+formal-worker = "formal_worker.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/formal_worker"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""

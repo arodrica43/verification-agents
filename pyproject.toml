@@ -12,6 +12,7 @@ dependencies = [
   "formal-domain",
   "formal-provenance",
   "formal-certificate-sdk",
+  "formal-store",
 ]
 
 [project.optional-dependencies]
@@ -22,6 +23,9 @@ dev = [
   "ruff>=0.8",
   "mypy>=1.13",
   "httpx>=0.28",
+  "aiosqlite>=0.20",
+  "cryptography>=43",
+  "python-multipart>=0.0.9",
 ]
 api = [
   "fastapi>=0.115",
@@ -50,9 +54,12 @@ members = [
   "packages/certificate-sdk",
   "packages/client-sdk",
   "packages/agent-core",
+  "packages/store",
   "services/proof-service",
   "services/certificate-service",
+  "services/retrieval-service",
   "apps/api",
+  "apps/worker",
 ]
 
 [tool.uv.sources]
@@ -63,9 +70,12 @@ formal-provenance = { workspace = true }
 formal-certificate-sdk = { workspace = true }
 formal-client-sdk = { workspace = true }
 formal-agent-core = { workspace = true }
+formal-store = { workspace = true }
 formal-proof-service = { workspace = true }
 formal-certificate-service = { workspace = true }
 formal-api = { workspace = true }
+formal-retrieval = { workspace = true }
+formal-worker = { workspace = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -78,9 +88,12 @@ pythonpath = [
   "packages/certificate-sdk/src",
   "packages/agent-core/src",
   "packages/client-sdk/src",
+  "packages/store/src",
   "services/proof-service/src",
   "services/certificate-service/src",
+  "services/retrieval-service/src",
   "apps/api/src",
+  "apps/worker/src",
 ]
 markers = [
   "lean: requires Lean 4 toolchain",
@@ -102,9 +115,12 @@ known-first-party = [
   "formal_certificate_sdk",
   "formal_certificate_service",
   "formal_proof_service",
+  "formal_store",
   "formal_agent_core",
   "formal_client_sdk",
   "formal_api",
+  "formal_retrieval",
+  "formal_worker",
 ]
 
 [tool.mypy]

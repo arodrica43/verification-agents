@@ -16,14 +16,68 @@ jobs:
       - name: Install workspace
         run: uv sync --all-extras
       - name: Ruff
-        run: uv run ruff check packages services apps/api tests scripts
+        run: uv run ruff check packages services apps/api apps/worker tests scripts
       - name: Unit tests
         run: uv run pytest -q -m "not lean and not integration"
+      - name: Production settings gate
+        run: uv run pytest -q tests/test_production_settings.py
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - name: Install web
+        run: npm install
+      - name: Lint web
+        run: npm run lint
+      - name: Build web
+        run: npm run build:web
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000
+          NEXT_PUBLIC_REQUIRE_LEAN: "true"
+
+  migrate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: formal_platform
+          POSTGRES_USER: formal
+          POSTGRES_PASSWORD: formal_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U formal -d formal_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Install workspace
+        run: uv sync --all-extras
+      - name: Alembic upgrade
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql+psycopg://formal:formal_ci@localhost:5432/formal_platform
+        run: uv run alembic upgrade head
 
   lean:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Install workspace
+        run: uv sync --all-extras
       - name: Install elan
         run: |
           curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
@@ -33,3 +87,26 @@ jobs:
         run: |
           elan toolchain install "$(cat lean-toolchain)"
           lake build
+      - name: Build infrastructure-bound demo
+        working-directory: lean/examples/infrastructure-bound
+        run: |
+          elan toolchain install "$(cat lean-toolchain)"
+          lake build
+      - name: Lean-backed pytest
+        run: uv run pytest -q -m lean
+      - name: Rebuild demo certificate with Lean gate
+        run: uv run python scripts/build_demo_certificate.py
+      - name: Verify demo certificate including Lean
+        run: uv run formal-cert verify examples/agent-policy-certificate/certificate-demo --lean
+      - name: Ensure verification success recorded
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(
+              Path("examples/agent-policy-certificate/certificate-demo/verification/verification.json")
+              .read_text(encoding="utf-8")
+          )
+          assert report["success"] is True, report
+          print("verification.success=true")
+          PY

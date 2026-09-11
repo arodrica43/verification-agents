@@ -1,11 +1,13 @@
 {
   "name": "formal-platform",
   "private": true,
-  "description": "Formal Platform monorepo — web workspace reserved for Phase 4",
+  "description": "Formal Platform monorepo — includes Next.js studio (apps/web)",
   "workspaces": [
     "apps/web"
   ],
   "scripts": {
-    "lint": "echo \"Web workspace not initialized yet (Phase 4)\""
+    "dev:web": "npm run dev -w apps/web",
+    "build:web": "npm run build -w apps/web",
+    "lint": "npm run lint -w apps/web"
   }
 }

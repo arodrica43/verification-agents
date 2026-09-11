@@ -10,6 +10,9 @@ dependencies = [
   "formal-provenance",
 ]
 
+[project.optional-dependencies]
+crypto = ["cryptography>=43"]
+
 [project.scripts]
 formal-cert = "formal_certificate_sdk.cli:main"
 

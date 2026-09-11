@@ -18,7 +18,7 @@ A certificate always exposes this trust boundary. Proving a theorem about a form
 ```text
 apps/          web (Next.js), API (FastAPI), worker
 services/      proof-service, retrieval-service, certificate-service
-packages/      domain, schemas, provenance, certificate-sdk, …
+packages/      domain, schemas, provenance, store, certificate-sdk, …
 lean/          Lean 4 libraries, examples, templates
 infra/         docker, terraform, kubernetes, observability
 docs/          architecture, ADRs, threat model, roadmap
@@ -28,10 +28,9 @@ tests/         integration, e2e, security, reproducibility
 
 ## Current phase
 
-**Phase 0 — Architecture & contracts** (active)  
-**Phase 1 — Deterministic formal core** (in progress)
-
-See [`docs/roadmap.md`](docs/roadmap.md).
+Phases **0–3** and formal-core demos are implemented.  
+Studio (Phase 4), agents (5), modelling/evidence/retrieval (6–11), and Demo B Lean seed (12) are in-tree.  
+Later enterprise phases remain incremental — see [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Quick start
 
@@ -49,7 +48,15 @@ cp .env.example .env
 docker compose up -d
 ```
 
-This starts PostgreSQL (pgvector), MinIO, Redis, API, proof-service, and workers.
+### Production stack
+
+```bash
+# Fill strong secrets first — see docs/operations/production.md
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+curl -fsS http://localhost:8000/ready
+```
+
+This starts PostgreSQL (pgvector), MinIO, Redis, API, proof-service, and certificate-service.
 
 ### Python packages
 
@@ -86,6 +93,7 @@ lake build
 |----------|------|
 | Architecture | [`docs/architecture/overview.md`](docs/architecture/overview.md) |
 | Roadmap | [`docs/roadmap.md`](docs/roadmap.md) |
+| **Production ops** | [`docs/operations/production.md`](docs/operations/production.md) |
 | Certificate semantics | [`docs/formal-model/certificate-semantics.md`](docs/formal-model/certificate-semantics.md) |
 | Provenance | [`docs/architecture/provenance.md`](docs/architecture/provenance.md) |
 | Threat model | [`docs/threat-model/threat-model.md`](docs/threat-model/threat-model.md) |

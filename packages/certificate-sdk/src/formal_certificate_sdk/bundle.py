@@ -10,7 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from formal_certificate_sdk.signing import hmac_sign, hmac_verify
+from formal_certificate_sdk.signing import (
+    ed25519_sign,
+    ed25519_verify,
+    hmac_sign,
+    hmac_verify,
+)
 from formal_provenance.canonical import canonical_json_bytes, content_hash
 from formal_provenance.graph import ProvenanceGraph, compute_provenance_root
 from formal_schemas.certificate import Certificate
@@ -56,6 +61,8 @@ class BundleInputs:
     verification_report: dict[str, Any]
     signing_key_id: str
     signing_secret: str
+    ed25519_private_key: bytes | None = None
+    ed25519_public_key: bytes | None = None
 
 
 class CertificateBundleBuilder:
@@ -111,11 +118,18 @@ class CertificateBundleBuilder:
         cert.provenance.root_hash = root
 
         payload = canonical_json_bytes({**body, "root_hash": root})
-        signature = hmac_sign(
-            key_id=inputs.signing_key_id,
-            secret=inputs.signing_secret,
-            payload=payload,
-        )
+        if inputs.ed25519_private_key is not None:
+            signature = ed25519_sign(
+                key_id=inputs.signing_key_id,
+                private_key=inputs.ed25519_private_key,
+                payload=payload,
+            )
+        else:
+            signature = hmac_sign(
+                key_id=inputs.signing_key_id,
+                secret=inputs.signing_secret,
+                payload=payload,
+            )
         cert.signatures = [signature]
         self._write_json(output_dir / "certificate.json", cert.model_dump(mode="json"))
         self._write_json(
@@ -162,6 +176,7 @@ def verify_bundle(
     bundle_dir: Path,
     *,
     signing_secret: str | None = None,
+    ed25519_public_key: bytes | None = None,
     run_lean: bool = False,
 ) -> dict[str, Any]:
     """Independently verify a certificate bundle (no LLM)."""
@@ -218,10 +233,21 @@ def verify_bundle(
     if cert.root_hash != expected_root or manifest.get("root_hash") != expected_root:
         failures.append("provenance root mismatch")
 
-    if signing_secret and cert.signatures:
+    if cert.signatures:
         payload = canonical_json_bytes({**body, "root_hash": cert.root_hash})
         for sig in cert.signatures:
-            if not hmac_verify(secret=signing_secret, payload=payload, signature=sig.signature):
+            if sig.algorithm == "Ed25519":
+                if ed25519_public_key is None:
+                    failures.append(f"Ed25519 public key required for signature: {sig.key_id}")
+                elif not ed25519_verify(
+                    public_key=ed25519_public_key,
+                    payload=payload,
+                    signature=sig.signature,
+                ):
+                    failures.append(f"signature invalid: {sig.key_id}")
+            elif signing_secret and not hmac_verify(
+                secret=signing_secret, payload=payload, signature=sig.signature
+            ):
                 failures.append(f"signature invalid: {sig.key_id}")
 
     lean_ok: bool | None = None

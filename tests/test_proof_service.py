@@ -22,6 +22,7 @@ async def test_forbidden_sorry_detected(tmp_path: Path) -> None:
     assert result.success is False
     assert result.contains_forbidden is True
     assert any("sorry" in m for m in result.forbidden_matches)
+    assert result.environment.get("isolated_workdir") is False
 
 
 @pytest.mark.asyncio
@@ -45,3 +46,4 @@ async def test_lake_build_agent_policy() -> None:
         pytest.skip("lake not available")
     assert result.success is True
     assert result.contains_forbidden is False
+    assert result.environment.get("isolated_workdir") is True

@@ -7,11 +7,19 @@ dependencies = [
   "fastapi>=0.115",
   "uvicorn[standard]>=0.32",
   "pydantic-settings>=2.6",
+  "httpx>=0.28",
+  "sqlalchemy[asyncio]>=2.0",
+  "alembic>=1.14",
+  "psycopg[binary]>=3.2",
   "formal-shared",
   "formal-schemas",
   "formal-domain",
   "formal-provenance",
   "formal-certificate-sdk",
+  "formal-certificate-service",
+  "formal-store",
+  "python-multipart>=0.0.9",
+  "cryptography>=43",
 ]
 
 [build-system]
