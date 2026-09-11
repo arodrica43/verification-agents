@@ -61,17 +61,27 @@ async def create_organization(
         org = await store.create_organization(
             OrganizationCreate(name=body.name, slug=body.slug)
         )
+        workspace = await store.create_workspace(
+            WorkspaceCreate(
+                organization_id=org.id,
+                name="Main",
+                slug="main",
+            )
+        )
         await store.add_membership(
             MembershipCreate(
                 organization_id=org.id,
                 principal_id=principal.principal_id,
                 principal_type=principal.principal_type,
                 role=Role.ORG_OWNER,
+                workspace_id=workspace.id,
             )
         )
     except FormalPlatformError as exc:
         raise HTTPException(status_code=409, detail=exc.to_dict()) from exc
-    return org.model_dump(mode="json")
+    payload = org.model_dump(mode="json")
+    payload["default_workspace"] = workspace.model_dump(mode="json")
+    return payload
 
 
 @router.post("/workspaces")

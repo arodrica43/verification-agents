@@ -149,6 +149,22 @@ services:
       timeout: 5s
       retries: 10
 
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      NEXT_PUBLIC_PRINCIPAL_ID: ${NEXT_PUBLIC_PRINCIPAL_ID:-dev-user}
+      NEXT_PUBLIC_REQUIRE_LEAN: ${NEXT_PUBLIC_REQUIRE_LEAN:-false}
+    ports:
+      - "${WEB_PUBLISH_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_started
+
 volumes:
   postgres_data:
   minio_data:

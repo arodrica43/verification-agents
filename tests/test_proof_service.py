@@ -25,6 +25,18 @@ async def test_forbidden_sorry_detected(tmp_path: Path) -> None:
     assert result.environment.get("isolated_workdir") is False
 
 
+def test_scan_forbidden_ignores_sorry_in_comments(tmp_path: Path) -> None:
+    (tmp_path / "Ok.lean").write_text(
+        "/-!\nNo `sorry` / `admit`.\n-/\n"
+        "-- also mention sorry and admit here\n"
+        "theorem t : True := by\n  trivial\n",
+        encoding="utf-8",
+    )
+    backend = LeanLakeBackend()
+    matches = backend._scan_forbidden(tmp_path, ["sorry", "admit", "native_decide"])
+    assert matches == []
+
+
 @pytest.mark.asyncio
 async def test_inspect_lists_lean_files() -> None:
     root = Path(__file__).resolve().parents[1]

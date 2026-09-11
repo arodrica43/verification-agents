@@ -6,7 +6,7 @@ Demo B seed theorem for the Formal Platform Phase 12.
 We model a simple capacity invariant: if demand does not exceed provisioned
 capacity, the system is within its safe operating bound.
 
-No `sorry` / `admit`.
+No unfinished proofs (axioms / placeholders).
 -/
 
 namespace InfrastructureBound

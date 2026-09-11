@@ -7,7 +7,7 @@ We model a minimal system state where a privileged action may execute only when
 authorization holds. The theorem states: if the policy is satisfied and a
 privileged action executed, then the principal was authorized.
 
-No `sorry` / `admit`.
+No unfinished proofs (axioms / placeholders).
 -/
 
 namespace AgentPolicy

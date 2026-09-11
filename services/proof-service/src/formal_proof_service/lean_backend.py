@@ -21,6 +21,60 @@ def _ignore_build_artifacts(directory: str, names: list[str]) -> set[str]:
     return {name for name in names if name in _IGNORE_NAMES}
 
 
+def _strip_lean_comments(text: str) -> str:
+    """Remove Lean line and block comments, preserving string literals.
+
+    Handles nested ``/- ... -/`` (including ``/-!`` / ``/--`` docs) and ``--``
+    line comments. Comment bodies are replaced with spaces (newlines kept) so
+    word-boundary scans do not match tokens that only appear in comments.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == '"':
+            out.append(ch)
+            i += 1
+            while i < n:
+                if text[i] == "\\" and i + 1 < n:
+                    out.append(text[i])
+                    out.append(text[i + 1])
+                    i += 2
+                    continue
+                out.append(text[i])
+                if text[i] == '"':
+                    i += 1
+                    break
+                i += 1
+            continue
+        if ch == "/" and i + 1 < n and text[i + 1] == "-":
+            depth = 1
+            out.extend("  ")
+            i += 2
+            while i < n and depth > 0:
+                if text[i] == "/" and i + 1 < n and text[i + 1] == "-":
+                    depth += 1
+                    out.extend("  ")
+                    i += 2
+                elif text[i] == "-" and i + 1 < n and text[i + 1] == "/":
+                    depth -= 1
+                    out.extend("  ")
+                    i += 2
+                else:
+                    out.append("\n" if text[i] == "\n" else " ")
+                    i += 1
+            continue
+        if ch == "-" and i + 1 < n and text[i + 1] == "-":
+            while i < n and text[i] != "\n":
+                out.append(" ")
+                i += 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 class LeanLakeBackend:
     """Runs `lake build` on a clean copy of the project.
 
@@ -156,7 +210,7 @@ class LeanLakeBackend:
         for lean_file in project.rglob("*.lean"):
             if ".lake" in lean_file.parts:
                 continue
-            text = lean_file.read_text(encoding="utf-8")
+            text = _strip_lean_comments(lean_file.read_text(encoding="utf-8"))
             for name, pattern in patterns.items():
                 if pattern.search(text):
                     matches.append(f"{lean_file.relative_to(project).as_posix()}:{name}")
