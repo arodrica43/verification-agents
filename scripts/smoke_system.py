@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """End-to-end smoke test against a running Formal Platform API."""
 
 from __future__ import annotations
@@ -76,12 +75,6 @@ def main() -> int:
     )
     if status == 409:
         print("org: already exists (ok)")
-        status, workspaces = _request(
-            "GET",
-            f"{base}/api/v1/organizations",
-            headers=headers,
-        )
-        # Fall through to certificate — org listing by slug is not required for smoke.
         org_id = None
         workspace_id = None
     else:
