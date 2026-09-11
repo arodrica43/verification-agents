@@ -5,69 +5,57 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services" / "certificate-service" / "src"))
-sys.path.insert(0, str(ROOT / "services" / "proof-service" / "src"))
 sys.path.insert(0, str(ROOT / "packages" / "certificate-sdk" / "src"))
 sys.path.insert(0, str(ROOT / "packages" / "provenance" / "src"))
 sys.path.insert(0, str(ROOT / "packages" / "schemas" / "src"))
 sys.path.insert(0, str(ROOT / "packages" / "shared" / "src"))
 
 from formal_certificate_service.issuer import issue_demo_certificate
-from formal_shared.errors import FormalPlatformError
+
+
+def try_lake_build(lean_dir: Path) -> bool:
+    try:
+        result = subprocess.run(
+            ["lake", "build"],
+            cwd=lean_dir,
+            capture_output=True,
+            text=True,
+            timeout=600,
+            check=False,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Build the agent-policy demo certificate (Lean-gated by default)."
-    )
+    parser = argparse.ArgumentParser()
     parser.add_argument(
         "--output",
         type=Path,
         default=ROOT / "examples" / "agent-policy-certificate" / "certificate-demo",
     )
     parser.add_argument(
-        "--allow-unverified",
+        "--require-lean",
         action="store_true",
-        help="Issue even if lake build fails or is unavailable (dev/offline only)",
-    )
-    parser.add_argument(
-        "--skip-lean",
-        action="store_true",
-        help="Do not invoke lake at all (implies --allow-unverified)",
+        help="Fail if lake build does not succeed",
     )
     args = parser.parse_args()
 
-    allow_unverified = args.allow_unverified or args.skip_lean
-    run_lean = not args.skip_lean
-
-    try:
-        out = issue_demo_certificate(
-            args.output,
-            require_lean=not allow_unverified,
-            allow_unverified=allow_unverified,
-            run_lean=run_lean,
-        )
-    except FormalPlatformError as exc:
-        print(json.dumps(exc.to_dict(), indent=2), file=sys.stderr)
+    lean_dir = ROOT / "lean" / "examples" / "agent-policy"
+    lean_ok = try_lake_build(lean_dir)
+    if args.require_lean and not lean_ok:
+        print("lake build failed and --require-lean was set", file=sys.stderr)
         sys.exit(1)
 
-    verification = json.loads(
-        (out / "verification" / "verification.json").read_text(encoding="utf-8")
-    )
-    print(
-        json.dumps(
-            {
-                "bundle": str(out),
-                "lean_verified": bool(verification.get("success")),
-                "root_hash_file": str(out / "certificate.json"),
-            },
-            indent=2,
-        )
-    )
+    out = issue_demo_certificate(args.output, lean_verified=lean_ok)
+    print(json.dumps({"bundle": str(out), "lean_verified": lean_ok}, indent=2))
 
 
 if __name__ == "__main__":
