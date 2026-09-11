@@ -2,30 +2,32 @@
 
 from __future__ import annotations
 
-import json
 import os
-import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from formal_api.auth import PrincipalDep
+from formal_api.certificate_issue import issue_and_persist_demo
+from formal_api.deps import get_db_session
 from formal_api.logging_config import configure_logging
 from formal_api.routes.agents import router as agents_router
 from formal_api.routes.artifacts import router as artifacts_router
 from formal_api.routes.blobs import router as blobs_router
+from formal_api.routes.certificates import router as certificates_router
 from formal_api.routes.identity import router as identity_router
 from formal_api.settings import Settings, get_settings
 from formal_certificate_sdk.bundle import verify_bundle
-from formal_certificate_service.issuer import issue_demo_certificate
 from formal_shared.errors import FormalPlatformError
 from formal_store.db import create_engine, create_session_factory
+from formal_store.identity import IdentityStore
 
 
 def _create_app(settings: Settings) -> FastAPI:
@@ -67,6 +69,7 @@ def _create_app(settings: Settings) -> FastAPI:
     application.include_router(identity_router)
     application.include_router(blobs_router)
     application.include_router(agents_router)
+    application.include_router(certificates_router)
     return application
 
 
@@ -78,6 +81,12 @@ class IssueDemoBody(BaseModel):
     require_lean: bool | None = None
     allow_unverified: bool | None = None
     timeout_seconds: int = Field(default=600, ge=1, le=3600)
+    organization_id: str | None = None
+    workspace_id: str | None = None
+    project_id: str | None = None
+
+
+SessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 
 
 class VerifyBundleBody(BaseModel):
@@ -172,8 +181,9 @@ async def meta() -> dict[str, Any]:
 async def issue_demo_cert(
     body: IssueDemoBody,
     principal: PrincipalDep,
+    session: SessionDep,
 ) -> dict:
-    """Issue the agent-policy demo certificate (auth required; Lean-gated in production)."""
+    """Issue the agent-policy demo certificate and persist it for the tenant."""
     cfg = get_settings()
     require_lean = (
         cfg.require_lean_for_issuance
@@ -191,34 +201,44 @@ async def issue_demo_cert(
     if require_lean is False and allow_unverified is False:
         allow_unverified = True
 
-    ed_priv = (
-        bytes.fromhex(cfg.certificate_ed25519_private_key_hex)
-        if cfg.certificate_ed25519_private_key_hex
-        else None
-    )
+    identity = IdentityStore(session)
+    organization_id = body.organization_id
+    workspace_id = body.workspace_id
+    if not organization_id:
+        orgs = await identity.list_organizations_for_principal(principal.principal_id)
+        if not orgs:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "organization_required",
+                    "message": "Create/select an organization before issuing certificates",
+                },
+            )
+        organization_id = orgs[0].id
+    if not workspace_id:
+        workspaces = await identity.list_workspaces(organization_id)
+        if not workspaces:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "workspace_required",
+                    "message": "Create/select a workspace before issuing certificates",
+                },
+            )
+        workspace_id = workspaces[0].id
+
     try:
-        with tempfile.TemporaryDirectory(prefix="formal-api-cert-") as tmp:
-            bundle = issue_demo_certificate(
-                Path(tmp) / "certificate-demo",
-                signing_secret=cfg.certificate_signing_secret,
-                require_lean=require_lean,
-                allow_unverified=allow_unverified,
-                timeout_seconds=body.timeout_seconds,
-                ed25519_private_key=ed_priv,
-                signing_key_id=cfg.certificate_signing_key_id,
-            )
-            certificate = json.loads((bundle / "certificate.json").read_text(encoding="utf-8"))
-            verification = json.loads(
-                (bundle / "verification" / "verification.json").read_text(encoding="utf-8")
-            )
-            return {
-                "certificate_id": certificate.get("certificate_id"),
-                "root_hash": certificate.get("root_hash"),
-                "lean_verified": bool(verification.get("success")),
-                "issued_by": principal.principal_id,
-                "certificate": certificate,
-                "verification": verification,
-            }
+        return await issue_and_persist_demo(
+            session,
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            project_id=body.project_id,
+            issued_by=principal.principal_id,
+            require_lean=require_lean,
+            allow_unverified=allow_unverified,
+            timeout_seconds=body.timeout_seconds,
+            settings=cfg,
+        )
     except FormalPlatformError as exc:
         raise HTTPException(status_code=400, detail=exc.to_dict()) from exc
     except ValueError as exc:

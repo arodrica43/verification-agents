@@ -199,3 +199,34 @@ class AgentRunRow(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class CertificateRow(Base):
+    """Issued certificate registry (bundle stored in blob store)."""
+
+    __tablename__ = "certificates"
+    __table_args__ = (
+        Index("ix_certificates_org_project", "organization_id", "project_id"),
+        Index("ix_certificates_org_workspace", "organization_id", "workspace_id"),
+        Index("ix_certificates_root_hash", "root_hash"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    project_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    root_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    lean_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="issued")
+    claim_statement: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    theorem_name: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    bundle_content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    bundle_uri: Mapped[str] = mapped_column(Text, nullable=False)
+    certificate_json: Mapped[dict[str, Any]] = mapped_column(JsonType, nullable=False, default=dict)
+    verification_json: Mapped[dict[str, Any]] = mapped_column(JsonType, nullable=False, default=dict)
+    issued_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False, default="agent")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

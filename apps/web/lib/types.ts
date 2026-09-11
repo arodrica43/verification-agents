@@ -32,13 +32,27 @@ export type Project = {
   created_at?: string;
 };
 
-export type DemoCertificateIssue = {
-  certificate_id?: string;
-  root_hash?: string;
-  lean_verified?: boolean;
+export type IssuedCertificate = {
+  certificate_id: string;
+  root_hash: string;
+  lean_verified: boolean;
+  status?: string;
+  claim_statement?: string;
+  theorem_name?: string;
+  organization_id?: string;
+  workspace_id?: string;
+  project_id?: string | null;
+  run_id?: string | null;
+  source?: string;
+  issued_by?: string;
+  created_at?: string | null;
+  bundle_content_hash?: string;
   certificate?: Record<string, unknown>;
   verification?: Record<string, unknown>;
 };
+
+export type DemoCertificateIssue = IssuedCertificate;
+
 
 export type AgentRunSummary = {
   run_id: string;
@@ -72,6 +86,8 @@ export type AgentRun = {
   verification_report?: Record<string, unknown> | null;
   lean_verified?: boolean;
   certificate_ready?: boolean;
+  certificate_id?: string | null;
+  issued_certificate?: IssuedCertificate | null;
   pending_human_review?: boolean;
   interrupt_node?: string | null;
   history: string[];

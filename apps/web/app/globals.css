@@ -442,6 +442,18 @@ textarea {
   width: auto;
 }
 
+button.linkish {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
 .empty-hint {
   margin-top: 1rem;
 }

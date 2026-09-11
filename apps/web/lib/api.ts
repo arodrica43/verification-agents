@@ -18,14 +18,16 @@ export class ApiError extends Error {
 
 export async function apiFetch<T>(
   path: string,
-  init?: RequestInit,
+  init?: RequestInit & { timeoutMs?: number },
 ): Promise<T> {
   const url = `${getApiUrl()}${path.startsWith("/") ? path : `/${path}`}`;
+  const timeoutMs = init?.timeoutMs ?? 15_000;
+  const { timeoutMs: _ignored, ...fetchInit } = init ?? {};
   const headers: Record<string, string> = {
     Accept: "application/json",
     "X-Principal-Id": process.env.NEXT_PUBLIC_PRINCIPAL_ID ?? "dev-user",
-    ...(init?.body ? { "Content-Type": "application/json" } : {}),
-    ...(init?.headers as Record<string, string> | undefined),
+    ...(fetchInit.body ? { "Content-Type": "application/json" } : {}),
+    ...(fetchInit.headers as Record<string, string> | undefined),
   };
   const apiKey = process.env.NEXT_PUBLIC_API_KEY;
   if (apiKey) {
@@ -34,9 +36,9 @@ export async function apiFetch<T>(
   let response: Response;
   try {
     response = await fetch(url, {
-      ...init,
+      ...fetchInit,
       headers,
-      signal: init?.signal ?? AbortSignal.timeout(15_000),
+      signal: fetchInit.signal ?? AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
     const detail =
@@ -74,4 +76,30 @@ export async function apiFetch<T>(
   }
 
   return data as T;
+}
+
+export async function apiDownload(
+  path: string,
+  filename: string,
+): Promise<void> {
+  const url = `${getApiUrl()}${path.startsWith("/") ? path : `/${path}`}`;
+  const headers: Record<string, string> = {
+    "X-Principal-Id": process.env.NEXT_PUBLIC_PRINCIPAL_ID ?? "dev-user",
+  };
+  const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const response = await fetch(url, {
+    headers,
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!response.ok) {
+    throw new ApiError(`Download failed: ${response.status}`, response.status);
+  }
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(objectUrl);
 }

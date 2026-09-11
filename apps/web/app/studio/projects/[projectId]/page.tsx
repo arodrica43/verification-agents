@@ -4,14 +4,14 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { StudioNav } from "@/components/studio-nav";
-import { ApiError, apiFetch } from "@/lib/api";
-import type { AgentRun, AgentRunSummary, Project } from "@/lib/types";
+import { ApiError, apiDownload, apiFetch } from "@/lib/api";
+import type { AgentRun, AgentRunSummary, IssuedCertificate, Project } from "@/lib/types";
 
 const PIPELINE: { graph: AgentRun["graph"]; label: string; needsText?: boolean }[] = [
   { graph: "problem_modelling", label: "1. Model system", needsText: true },
   { graph: "formalization", label: "2. Formalize claims" },
   { graph: "proof", label: "3. Verify with Lean" },
-  { graph: "certification", label: "4. Prepare certificate" },
+  { graph: "certification", label: "4. Issue certificate" },
 ];
 
 export default function ProjectStudioPage() {
@@ -83,15 +83,20 @@ export default function ProjectStudioPage() {
       const run = await apiFetch<AgentRun>("/api/v1/agents/runs", {
         method: "POST",
         body: JSON.stringify(body),
+        timeoutMs:
+          graph === "proof" || graph === "certification" ? 180_000 : 30_000,
       });
       setLatest(run);
       const failed = run.status === "failed";
+      const issuedId = run.certificate_id || run.issued_certificate?.certificate_id;
       const leanNote =
         graph === "proof"
           ? run.lean_verified
-            ? " lean_verified=true — ready to certify."
+            ? " lean_verified=true — ready to issue a certificate."
             : " lean_verified=false — install Lean/lake or fix the model, then retry."
-          : "";
+          : graph === "certification" && issuedId
+            ? ` Certificate ${issuedId} issued and stored. See Certificates.`
+            : "";
       setMessage({
         tone: failed || (graph === "proof" && !run.lean_verified) ? "error" : "ok",
         text:
@@ -120,17 +125,19 @@ export default function ProjectStudioPage() {
     setBusy(true);
     setMessage(null);
     try {
-      const data = await apiFetch<{
-        certificate_id?: string;
-        lean_verified?: boolean;
-      }>(`/api/v1/agents/runs/${encodeURIComponent(latest.run_id)}/certificate`, {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
+      const data = await apiFetch<IssuedCertificate>(
+        `/api/v1/agents/runs/${encodeURIComponent(latest.run_id)}/certificate`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+          timeoutMs: 180_000,
+        },
+      );
       setMessage({
         tone: "ok",
-        text: `Lean-verified certificate ${data.certificate_id ?? ""} issued (lean=${Boolean(data.lean_verified)}).`,
+        text: `Lean-verified certificate ${data.certificate_id} issued and stored. Open Certificates to download.`,
       });
+      await refresh();
     } catch (err) {
       setMessage({
         tone: "error",
@@ -142,19 +149,27 @@ export default function ProjectStudioPage() {
   }
 
   async function issueDemoCert() {
+    if (!project) return;
     setBusy(true);
     setMessage(null);
     try {
-      const data = await apiFetch<{
-        certificate_id?: string;
-        lean_verified?: boolean;
-      }>("/api/v1/certificates/demo/issue", {
-        method: "POST",
-        body: JSON.stringify({ allow_unverified: true, require_lean: false }),
-      });
+      const data = await apiFetch<IssuedCertificate>(
+        "/api/v1/certificates/demo/issue",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            organization_id: project.organization_id,
+            workspace_id: project.workspace_id,
+            project_id: project.id,
+            allow_unverified: true,
+            require_lean: false,
+          }),
+          timeoutMs: 120_000,
+        },
+      );
       setMessage({
         tone: "ok",
-        text: `Demo certificate ${data.certificate_id ?? ""} issued (lean=${Boolean(data.lean_verified)}). See Certificates tab for history.`,
+        text: `Demo certificate ${data.certificate_id} issued and stored (lean=${Boolean(data.lean_verified)}).`,
       });
     } catch (err) {
       setMessage({
@@ -347,11 +362,23 @@ export default function ProjectStudioPage() {
             <section className="panel" aria-labelledby="cert-heading">
               <h2 id="cert-heading">Certificate</h2>
               <p className="note">
-                Production certificates require{" "}
-                <code>lean_verified=true</code> from step 3 (independent{" "}
-                <code>lake build</code>). Demo issuance bypasses that gate for
-                local smoke tests only.
+                Step 4 issues and stores a Lean-verified certificate on the
+                server when <code>lean_verified=true</code>. Certificates appear
+                under the Certificates tab for this organization.
               </p>
+              {latest?.certificate_id || latest?.issued_certificate ? (
+                <p className="status status--ok" role="status">
+                  Issued{" "}
+                  {latest.certificate_id ||
+                    latest.issued_certificate?.certificate_id}
+                  {" · "}
+                  lean=
+                  {String(
+                    latest.issued_certificate?.lean_verified ??
+                      latest.lean_verified,
+                  )}
+                </p>
+              ) : null}
               <div className="form-actions">
                 <button
                   type="button"
@@ -359,8 +386,22 @@ export default function ProjectStudioPage() {
                   disabled={busy || !latest?.lean_verified}
                   onClick={() => void issueVerifiedCert()}
                 >
-                  Issue Lean-verified certificate
+                  Re-issue Lean-verified certificate
                 </button>
+                {latest?.certificate_id ? (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() =>
+                      void apiDownload(
+                        `/api/v1/certificates/${encodeURIComponent(latest.certificate_id!)}/bundle`,
+                        `certificate-${latest.certificate_id}.zip`,
+                      )
+                    }
+                  >
+                    Download bundle
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="btn"

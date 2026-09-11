@@ -1,105 +1,109 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 import { StudioNav } from "@/components/studio-nav";
-import { ApiError, apiFetch } from "@/lib/api";
-import {
-  CertHistoryItem,
-  loadCertHistory,
-  loadStudioSession,
-  pushCertHistory,
-} from "@/lib/studio-session";
-import type { DemoCertificateIssue, Organization, Workspace } from "@/lib/types";
+import { ApiError, apiDownload, apiFetch } from "@/lib/api";
+import { loadStudioSession } from "@/lib/studio-session";
+import type { IssuedCertificate, Organization, Workspace } from "@/lib/types";
 
 export default function CertificatesPage() {
   const [busy, setBusy] = useState(false);
-  const [requireLean, setRequireLean] = useState(false);
-  const [result, setResult] = useState<DemoCertificateIssue | null>(null);
-  const [history, setHistory] = useState<CertHistoryItem[]>([]);
+  const [requireLean, setRequireLean] = useState(true);
+  const [items, setItems] = useState<IssuedCertificate[]>([]);
+  const [selected, setSelected] = useState<IssuedCertificate | null>(null);
   const [message, setMessage] = useState<{
     tone: "ok" | "error" | "warn";
     text: string;
   } | null>(null);
   const [contextLabel, setContextLabel] = useState<string | null>(null);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [bootError, setBootError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setHistory(loadCertHistory());
-    const envLean =
-      (process.env.NEXT_PUBLIC_REQUIRE_LEAN ?? "false").toLowerCase() === "true";
-    setRequireLean(envLean);
-
-    const session = loadStudioSession();
-    if (!session.organizationId) return;
-    (async () => {
-      try {
-        const [orgs, workspaces] = await Promise.all([
-          apiFetch<{ items: Organization[] }>("/api/v1/organizations"),
-          apiFetch<{ items: Workspace[] }>(
-            `/api/v1/organizations/${encodeURIComponent(session.organizationId!)}/workspaces`,
-          ),
-        ]);
-        const org = (orgs.items ?? []).find((o) => o.id === session.organizationId);
-        const ws = (workspaces.items ?? []).find((w) => w.id === session.workspaceId);
-        if (org) {
-          setContextLabel(ws ? `${org.name} / ${ws.name}` : org.name);
-        }
-      } catch {
-        /* context label is optional */
-      }
-    })();
+  const refresh = useCallback(async (orgId: string) => {
+    const data = await apiFetch<{ items: IssuedCertificate[] }>(
+      `/api/v1/organizations/${encodeURIComponent(orgId)}/certificates`,
+    );
+    setItems(data.items ?? []);
   }, []);
 
+  useEffect(() => {
+    const session = loadStudioSession();
+    const envLean =
+      (process.env.NEXT_PUBLIC_REQUIRE_LEAN ?? "true").toLowerCase() === "true";
+    setRequireLean(envLean);
+
+    (async () => {
+      try {
+        const orgs = await apiFetch<{ items: Organization[] }>(
+          "/api/v1/organizations",
+        );
+        const orgList = orgs.items ?? [];
+        const orgId =
+          session.organizationId &&
+          orgList.some((o) => o.id === session.organizationId)
+            ? session.organizationId
+            : orgList[0]?.id ?? null;
+        if (!orgId) {
+          setBootError("Create an organization in Studio before issuing certificates.");
+          return;
+        }
+        setOrganizationId(orgId);
+        const workspaces = await apiFetch<{ items: Workspace[] }>(
+          `/api/v1/organizations/${encodeURIComponent(orgId)}/workspaces`,
+        );
+        const wsList = workspaces.items ?? [];
+        const wsId =
+          session.workspaceId && wsList.some((w) => w.id === session.workspaceId)
+            ? session.workspaceId
+            : wsList[0]?.id ?? null;
+        setWorkspaceId(wsId);
+        const org = orgList.find((o) => o.id === orgId);
+        const ws = wsList.find((w) => w.id === wsId);
+        if (org) setContextLabel(ws ? `${org.name} / ${ws.name}` : org.name);
+        await refresh(orgId);
+      } catch (err) {
+        setBootError(
+          err instanceof ApiError ? err.message : "Failed to load certificates.",
+        );
+      }
+    })();
+  }, [refresh]);
+
   async function issueDemo() {
+    if (!organizationId || !workspaceId) {
+      setMessage({
+        tone: "error",
+        text: "Select an organization and workspace in Studio first.",
+      });
+      return;
+    }
     setBusy(true);
     setMessage(null);
     try {
-      const data = await apiFetch<DemoCertificateIssue>(
+      const data = await apiFetch<IssuedCertificate>(
         "/api/v1/certificates/demo/issue",
         {
           method: "POST",
           body: JSON.stringify({
+            organization_id: organizationId,
+            workspace_id: workspaceId,
             allow_unverified: !requireLean,
             require_lean: requireLean,
           }),
+          timeoutMs: 120_000,
         },
       );
-      setResult(data);
-      const certificate = data.certificate;
-      const claim =
-        certificate &&
-        typeof certificate.claim === "object" &&
-        certificate.claim !== null
-          ? (certificate.claim as { statement?: string }).statement
-          : undefined;
-      const theorem =
-        certificate &&
-        typeof certificate.formal_theorem === "object" &&
-        certificate.formal_theorem !== null &&
-        "name" in certificate.formal_theorem
-          ? String((certificate.formal_theorem as { name?: string }).name)
-          : undefined;
-
-      if (data.certificate_id && data.root_hash) {
-        setHistory(
-          pushCertHistory({
-            certificate_id: data.certificate_id,
-            root_hash: data.root_hash,
-            lean_verified: Boolean(data.lean_verified),
-            issued_at: new Date().toISOString(),
-            claim,
-            theorem,
-          }),
-        );
-      }
-
+      setSelected(data);
+      await refresh(organizationId);
       setMessage({
         tone: "ok",
         text: data.lean_verified
-          ? "Demo certificate issued with Lean verification."
-          : "Demo certificate issued without Lean (local demo mode).",
+          ? `Certificate ${data.certificate_id} issued with Lean verification.`
+          : `Certificate ${data.certificate_id} issued (Lean not required for this demo).`,
       });
     } catch (err) {
-      setResult(null);
       setMessage({
         tone: "error",
         text:
@@ -112,26 +116,19 @@ export default function CertificatesPage() {
     }
   }
 
-  function downloadJson() {
-    if (!result) return;
-    const blob = new Blob([JSON.stringify(result, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${result.certificate_id ?? "certificate"}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  async function downloadBundle(cert: IssuedCertificate) {
+    try {
+      await apiDownload(
+        `/api/v1/certificates/${encodeURIComponent(cert.certificate_id)}/bundle`,
+        `certificate-${cert.certificate_id}.zip`,
+      );
+    } catch (err) {
+      setMessage({
+        tone: "error",
+        text: err instanceof ApiError ? err.message : "Download failed.",
+      });
+    }
   }
-
-  const certificate = result?.certificate;
-  const claim =
-    certificate &&
-    typeof certificate.claim === "object" &&
-    certificate.claim !== null
-      ? (certificate.claim as { statement?: string })
-      : null;
 
   return (
     <>
@@ -139,12 +136,22 @@ export default function CertificatesPage() {
       <main className="studio-main">
         <h1>Certificates</h1>
         <p className="lede">
-          Issue the agent-policy demo certificate and keep a local history of
-          what you issued in this browser.
+          Issued certificates are stored on the Formal Platform (not only in this
+          browser). Open a project, verify with Lean, then issue — or use the
+          agent-policy demo below.
         </p>
+        {bootError && (
+          <p className="status status--error" role="alert">
+            {bootError}
+          </p>
+        )}
 
         <section className="panel" aria-labelledby="issue-heading">
           <h2 id="issue-heading">Issue demo certificate</h2>
+          <p className="note">
+            Uses the built-in agent-policy Lean project. Prefer project-scoped
+            issuance after <strong>Verify with Lean</strong> for your own systems.
+          </p>
           <label className="check-row">
             <input
               type="checkbox"
@@ -157,16 +164,14 @@ export default function CertificatesPage() {
             <button
               type="button"
               className="btn btn-primary"
+              disabled={busy || !organizationId}
               onClick={() => void issueDemo()}
-              disabled={busy}
             >
-              {busy ? "Issuing…" : "Issue demo certificate"}
+              Issue demo certificate
             </button>
-            {result && (
-              <button type="button" className="btn" onClick={downloadJson}>
-                Download JSON
-              </button>
-            )}
+            <Link className="btn" href="/studio">
+              Open studio workspace
+            </Link>
           </div>
           {message && (
             <p className={`status status--${message.tone}`} role="status">
@@ -175,69 +180,75 @@ export default function CertificatesPage() {
           )}
         </section>
 
-        {result && (
-          <section className="panel" aria-labelledby="result-heading">
-            <h2 id="result-heading">Latest issue</h2>
-            <dl className="cert-summary">
-              <div>
-                <dt>Certificate ID</dt>
-                <dd>{result.certificate_id ?? "—"}</dd>
-              </div>
-              <div>
-                <dt>Root hash</dt>
-                <dd className="mono-break">{result.root_hash ?? "—"}</dd>
-              </div>
-              <div>
-                <dt>Lean verified</dt>
-                <dd>{result.lean_verified ? "yes" : "no"}</dd>
-              </div>
-              {claim?.statement && (
-                <div>
-                  <dt>Claim</dt>
-                  <dd>{claim.statement}</dd>
-                </div>
-              )}
-              {typeof certificate?.formal_theorem === "object" &&
-                certificate.formal_theorem !== null &&
-                "name" in certificate.formal_theorem && (
-                  <div>
-                    <dt>Theorem</dt>
-                    <dd>
-                      {String(
-                        (certificate.formal_theorem as { name?: string }).name,
-                      )}
-                    </dd>
-                  </div>
-                )}
-            </dl>
-          </section>
-        )}
-
-        <section className="panel" aria-labelledby="history-heading">
-          <h2 id="history-heading">Issued in this browser</h2>
-          {history.length === 0 ? (
-            <p className="note empty-hint" style={{ marginBottom: 0 }}>
-              No certificates issued from this browser yet.
+        <section className="panel" aria-labelledby="list-heading">
+          <h2 id="list-heading">Issued certificates</h2>
+          {items.length === 0 ? (
+            <p className="note empty-hint">
+              No certificates issued yet for this organization.
             </p>
           ) : (
             <ul className="project-list">
-              {history.map((item) => (
-                <li key={item.certificate_id}>
-                  <span className="name">
-                    {item.theorem ?? item.certificate_id.slice(0, 8)}
-                    {item.lean_verified ? " · lean" : " · unverified"}
-                  </span>
+              {items.map((c) => (
+                <li key={c.certificate_id}>
+                  <button
+                    type="button"
+                    className="name linkish"
+                    onClick={() => setSelected(c)}
+                  >
+                    {c.theorem_name || c.certificate_id}
+                  </button>
                   <span className="meta">
-                    {new Date(item.issued_at).toLocaleString()}
-                    {item.claim ? ` — ${item.claim}` : ""}
-                    <br />
-                    <span className="mono-break">{item.root_hash}</span>
+                    {c.lean_verified ? "lean_verified" : "unverified"} ·{" "}
+                    {c.source ?? "issued"} · {c.created_at ?? ""}
                   </span>
+                  <span className="meta">{c.claim_statement}</span>
+                  <div className="form-actions">
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => void downloadBundle(c)}
+                    >
+                      Download bundle
+                    </button>
+                    {c.project_id ? (
+                      <Link
+                        className="btn"
+                        href={`/studio/projects/${c.project_id}`}
+                      >
+                        Open project
+                      </Link>
+                    ) : null}
+                  </div>
                 </li>
               ))}
             </ul>
           )}
         </section>
+
+        {selected && (
+          <section className="panel" aria-labelledby="detail-heading">
+            <h2 id="detail-heading">Certificate detail</h2>
+            <p className="note">
+              id={selected.certificate_id} · root={selected.root_hash} · lean=
+              {String(selected.lean_verified)}
+            </p>
+            <pre className="code-block">
+              {JSON.stringify(
+                {
+                  certificate_id: selected.certificate_id,
+                  root_hash: selected.root_hash,
+                  lean_verified: selected.lean_verified,
+                  claim_statement: selected.claim_statement,
+                  theorem_name: selected.theorem_name,
+                  verification: selected.verification,
+                  certificate: selected.certificate,
+                },
+                null,
+                2,
+              )}
+            </pre>
+          </section>
+        )}
       </main>
     </>
   );
