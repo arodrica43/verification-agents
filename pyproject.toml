@@ -1,0 +1,147 @@
+[project]
+name = "formal-platform"
+version = "0.1.0"
+description = "AI-assisted formal reasoning platform with independently verifiable certificates"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Formal Platform" }]
+dependencies = [
+  "formal-shared",
+  "formal-schemas",
+  "formal-domain",
+  "formal-provenance",
+  "formal-certificate-sdk",
+  "formal-store",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "pytest-cov>=5.0",
+  "ruff>=0.8",
+  "mypy>=1.13",
+  "httpx>=0.28",
+  "aiosqlite>=0.20",
+  "cryptography>=43",
+  "python-multipart>=0.0.9",
+]
+api = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "sqlalchemy[asyncio]>=2.0",
+  "alembic>=1.14",
+  "psycopg[binary]>=3.2",
+  "pydantic-settings>=2.6",
+]
+proof = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "pydantic-settings>=2.6",
+  "httpx>=0.28",
+]
+
+[project.scripts]
+formal-cert = "formal_certificate_sdk.cli:main"
+
+[tool.uv.workspace]
+members = [
+  "packages/shared",
+  "packages/schemas",
+  "packages/domain",
+  "packages/provenance",
+  "packages/certificate-sdk",
+  "packages/client-sdk",
+  "packages/agent-core",
+  "packages/store",
+  "services/proof-service",
+  "services/certificate-service",
+  "services/retrieval-service",
+  "apps/api",
+  "apps/worker",
+]
+
+[tool.uv.sources]
+formal-shared = { workspace = true }
+formal-schemas = { workspace = true }
+formal-domain = { workspace = true }
+formal-provenance = { workspace = true }
+formal-certificate-sdk = { workspace = true }
+formal-client-sdk = { workspace = true }
+formal-agent-core = { workspace = true }
+formal-store = { workspace = true }
+formal-proof-service = { workspace = true }
+formal-certificate-service = { workspace = true }
+formal-api = { workspace = true }
+formal-retrieval = { workspace = true }
+formal-worker = { workspace = true }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests", "packages", "services"]
+pythonpath = [
+  "packages/shared/src",
+  "packages/schemas/src",
+  "packages/domain/src",
+  "packages/provenance/src",
+  "packages/certificate-sdk/src",
+  "packages/agent-core/src",
+  "packages/client-sdk/src",
+  "packages/store/src",
+  "services/proof-service/src",
+  "services/certificate-service/src",
+  "services/retrieval-service/src",
+  "apps/api/src",
+  "apps/worker/src",
+]
+markers = [
+  "lean: requires Lean 4 toolchain",
+  "integration: requires docker services",
+  "security: security / isolation tests",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["packages", "services", "apps", "tests"]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+  "formal_shared",
+  "formal_schemas",
+  "formal_domain",
+  "formal_provenance",
+  "formal_certificate_sdk",
+  "formal_certificate_service",
+  "formal_proof_service",
+  "formal_store",
+  "formal_agent_core",
+  "formal_client_sdk",
+  "formal_api",
+  "formal_retrieval",
+  "formal_worker",
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = [
+  "formal_shared",
+  "formal_schemas",
+  "formal_domain",
+  "formal_provenance",
+  "formal_certificate_sdk",
+]
+
+# Workspace root is a virtual project: install member deps, do not ship a
+# formal_platform package (hatchling cannot invent one from an empty tree).
+[tool.uv]
+package = false
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["README.md"]

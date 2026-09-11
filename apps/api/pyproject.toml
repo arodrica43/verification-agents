@@ -1,0 +1,34 @@
+[project]
+name = "formal-api"
+version = "0.1.0"
+description = "Formal Platform HTTP API (Phase 0 skeleton)"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "pydantic-settings>=2.6",
+  "httpx>=0.28",
+  "sqlalchemy[asyncio]>=2.0",
+  "alembic>=1.14",
+  "psycopg[binary]>=3.2",
+  "formal-shared",
+  "formal-schemas",
+  "formal-domain",
+  "formal-provenance",
+  "formal-certificate-sdk",
+  "formal-certificate-service",
+  "formal-store",
+  "formal-agent-core",
+  "python-multipart>=0.0.9",
+  "cryptography>=43",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/formal_api"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""

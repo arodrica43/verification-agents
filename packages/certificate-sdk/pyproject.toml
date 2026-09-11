@@ -1,0 +1,27 @@
+[project]
+name = "formal-certificate-sdk"
+version = "0.1.0"
+description = "Certificate bundle export and independent verification CLI"
+requires-python = ">=3.12"
+dependencies = [
+  "pydantic>=2.10",
+  "formal-shared",
+  "formal-schemas",
+  "formal-provenance",
+]
+
+[project.optional-dependencies]
+crypto = ["cryptography>=43"]
+
+[project.scripts]
+formal-cert = "formal_certificate_sdk.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/formal_certificate_sdk"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""

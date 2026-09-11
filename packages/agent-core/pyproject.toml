@@ -1,0 +1,26 @@
+[project]
+name = "formal-agent-core"
+version = "0.1.0"
+description = "Typed agent graph runner with optional LangGraph (Phase 5+)"
+requires-python = ">=3.12"
+dependencies = [
+  "pydantic>=2.10",
+  "formal-schemas",
+  "formal-shared",
+  "formal-proof-service",
+]
+
+[project.optional-dependencies]
+langgraph = [
+  "langgraph>=0.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/formal_agent_core"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""

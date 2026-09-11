@@ -1,0 +1,23 @@
+[project]
+name = "formal-proof-service"
+version = "0.1.0"
+description = "Isolated Lean proof check / replay service"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "pydantic>=2.10",
+  "pydantic-settings>=2.6",
+  "formal-shared",
+  "formal-schemas",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/formal_proof_service"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""

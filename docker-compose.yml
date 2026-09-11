@@ -1,0 +1,170 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-formal_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-formal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-only-postgres-pass}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-formal} -d ${POSTGRES_DB:-formal_platform}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-localminio}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-localminio-secret}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 3;
+      mc alias set local http://minio:9000 $${MINIO_ROOT_USER:-localminio} $${MINIO_ROOT_PASSWORD:-localminio-secret};
+      mc mb -p local/${S3_BUCKET:-formal-artifacts} || true;
+      exit 0;
+      "
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-localminio}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-localminio-secret}
+      S3_BUCKET: ${S3_BUCKET:-formal-artifacts}
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  proof-service:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.proof-service
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PROOF_SERVICE_PORT: "8001"
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./lean:/lean:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  certificate-service:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    working_dir: /app/services/certificate-service
+    command: ["python", "-m", "formal_certificate_service.app"]
+    environment:
+      CERTIFICATE_SERVICE_HOST: "0.0.0.0"
+      CERTIFICATE_SERVICE_PORT: "8002"
+      CERTIFICATE_SIGNING_SECRET: ${CERTIFICATE_SIGNING_SECRET:-local-only-signing-secret-32chars-min}
+      PROOF_SERVICE_URL: http://proof-service:8001
+      CERTIFICATE_REMOTE_PROOF: "1"
+      LEAN_CHECK_PROJECT_PATH: /lean/examples/agent-policy
+      LEAN_PROJECT_DIR: /app/lean/examples/agent-policy
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./lean:/app/lean:ro
+      - ./lean:/lean:ro
+    depends_on:
+      proof-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-formal}:${POSTGRES_PASSWORD:-local-only-postgres-pass}@postgres:5432/${POSTGRES_DB:-formal_platform}
+      PROOF_SERVICE_URL: http://proof-service:8001
+      CERTIFICATE_REMOTE_PROOF: "1"
+      LEAN_CHECK_PROJECT_PATH: /lean/examples/agent-policy
+      LEAN_PROJECT_DIR: /app/lean/examples/agent-policy
+      RETRIEVAL_SERVICE_URL: http://retrieval-service:8003
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-localminio}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-localminio-secret}
+      S3_BUCKET: ${S3_BUCKET:-formal-artifacts}
+      REDIS_URL: redis://redis:6379/0
+      CERTIFICATE_SIGNING_SECRET: ${CERTIFICATE_SIGNING_SECRET:-local-only-signing-secret-32chars-min}
+      AUTO_CREATE_TABLES: ${AUTO_CREATE_TABLES:-true}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./lean:/app/lean:ro
+      - ./lean:/lean:ro
+      - ./examples:/app/examples:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      proof-service:
+        condition: service_healthy
+      certificate-service:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      retrieval-service:
+        condition: service_started
+      minio:
+        condition: service_started
+
+  retrieval-service:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    working_dir: /app/services/retrieval-service
+    command: ["python", "-m", "formal_retrieval.app"]
+    environment:
+      RETRIEVAL_HOST: "0.0.0.0"
+      RETRIEVAL_PORT: "8003"
+    ports:
+      - "8003:8003"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      NEXT_PUBLIC_PRINCIPAL_ID: ${NEXT_PUBLIC_PRINCIPAL_ID:-dev-user}
+      NEXT_PUBLIC_REQUIRE_LEAN: ${NEXT_PUBLIC_REQUIRE_LEAN:-false}
+    ports:
+      - "${WEB_PUBLISH_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  minio_data:

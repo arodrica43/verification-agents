@@ -1,0 +1,6 @@
+name = "InfrastructureBound"
+version = "0.1.0"
+defaultTargets = ["InfrastructureBound"]
+
+[[lean_lib]]
+name = "InfrastructureBound"

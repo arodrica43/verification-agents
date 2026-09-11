@@ -1,0 +1,6 @@
+name = "AgentPolicy"
+version = "0.1.0"
+defaultTargets = ["AgentPolicy"]
+
+[[lean_lib]]
+name = "AgentPolicy"
