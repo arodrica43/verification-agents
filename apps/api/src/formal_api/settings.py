@@ -13,6 +13,11 @@ _DEV_SECRETS = {
     "minioadmin",
     "dev-user",
     "change_me",
+    "local-only-postgres-pass",
+    "localminio",
+    "localminio-secret",
+    "local-only-signing-secret-32chars-min",
+    "<SET_ME>",
 }
 
 
@@ -25,7 +30,7 @@ class Settings(BaseSettings):
     )
     api_host: str = "0.0.0.0"
     api_port: int = 8000
-    api_cors_origins: str = "http://localhost:3000"
+    api_cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     api_keys: str = ""  # comma-separated; required in production
     proof_service_url: str = "http://127.0.0.1:8001"
     retrieval_service_url: str = "http://127.0.0.1:8003"
@@ -81,7 +86,12 @@ class Settings(BaseSettings):
             self.certificate_signing_secret
         ) < 32:
             problems.append("CERTIFICATE_SIGNING_SECRET must be a strong non-default secret")
-        if "formal_dev_change_me" in self.database_url or "change_me" in self.database_url:
+        if (
+            "formal_dev_change_me" in self.database_url
+            or "change_me" in self.database_url
+            or "local-only-postgres-pass" in self.database_url
+            or "<SET_ME>" in self.database_url
+        ):
             problems.append("DATABASE_URL must not use development credentials")
         if self.auto_create_tables:
             problems.append("AUTO_CREATE_TABLES must be false in production (use Alembic)")

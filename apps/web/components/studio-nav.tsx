@@ -5,12 +5,25 @@ const links = [
   { href: "/studio/certificates", label: "Certificates" },
 ];
 
-export function StudioNav({ active }: { active: "workspace" | "certificates" }) {
+export function StudioNav({
+  active,
+  contextLabel,
+}: {
+  active: "workspace" | "certificates";
+  contextLabel?: string | null;
+}) {
   return (
     <header className="studio-nav">
-      <Link href="/" className="studio-nav__brand">
-        Formal Platform
-      </Link>
+      <div className="studio-nav__left">
+        <Link href="/" className="studio-nav__brand">
+          Formal Platform
+        </Link>
+        {contextLabel ? (
+          <span className="studio-nav__context" title={contextLabel}>
+            {contextLabel}
+          </span>
+        ) : null}
+      </div>
       <nav className="studio-nav__links" aria-label="Studio">
         {links.map((link) => {
           const isActive =

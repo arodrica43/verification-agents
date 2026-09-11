@@ -1,23 +1,57 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { StudioNav } from "@/components/studio-nav";
-import { ApiError, apiFetch, getApiUrl } from "@/lib/api";
-import type { DemoCertificateIssue } from "@/lib/types";
+import { ApiError, apiFetch } from "@/lib/api";
+import {
+  CertHistoryItem,
+  loadCertHistory,
+  loadStudioSession,
+  pushCertHistory,
+} from "@/lib/studio-session";
+import type { DemoCertificateIssue, Organization, Workspace } from "@/lib/types";
 
 export default function CertificatesPage() {
   const [busy, setBusy] = useState(false);
+  const [requireLean, setRequireLean] = useState(false);
   const [result, setResult] = useState<DemoCertificateIssue | null>(null);
+  const [history, setHistory] = useState<CertHistoryItem[]>([]);
   const [message, setMessage] = useState<{
     tone: "ok" | "error" | "warn";
     text: string;
   } | null>(null);
+  const [contextLabel, setContextLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    setHistory(loadCertHistory());
+    const envLean =
+      (process.env.NEXT_PUBLIC_REQUIRE_LEAN ?? "false").toLowerCase() === "true";
+    setRequireLean(envLean);
+
+    const session = loadStudioSession();
+    if (!session.organizationId) return;
+    (async () => {
+      try {
+        const [orgs, workspaces] = await Promise.all([
+          apiFetch<{ items: Organization[] }>("/api/v1/organizations"),
+          apiFetch<{ items: Workspace[] }>(
+            `/api/v1/organizations/${encodeURIComponent(session.organizationId!)}/workspaces`,
+          ),
+        ]);
+        const org = (orgs.items ?? []).find((o) => o.id === session.organizationId);
+        const ws = (workspaces.items ?? []).find((w) => w.id === session.workspaceId);
+        if (org) {
+          setContextLabel(ws ? `${org.name} / ${ws.name}` : org.name);
+        }
+      } catch {
+        /* context label is optional */
+      }
+    })();
+  }, []);
 
   async function issueDemo() {
     setBusy(true);
     setMessage(null);
-    const requireLean =
-      (process.env.NEXT_PUBLIC_REQUIRE_LEAN ?? "false").toLowerCase() === "true";
     try {
       const data = await apiFetch<DemoCertificateIssue>(
         "/api/v1/certificates/demo/issue",
@@ -30,27 +64,65 @@ export default function CertificatesPage() {
         },
       );
       setResult(data);
+      const certificate = data.certificate;
+      const claim =
+        certificate &&
+        typeof certificate.claim === "object" &&
+        certificate.claim !== null
+          ? (certificate.claim as { statement?: string }).statement
+          : undefined;
+      const theorem =
+        certificate &&
+        typeof certificate.formal_theorem === "object" &&
+        certificate.formal_theorem !== null &&
+        "name" in certificate.formal_theorem
+          ? String((certificate.formal_theorem as { name?: string }).name)
+          : undefined;
+
+      if (data.certificate_id && data.root_hash) {
+        setHistory(
+          pushCertHistory({
+            certificate_id: data.certificate_id,
+            root_hash: data.root_hash,
+            lean_verified: Boolean(data.lean_verified),
+            issued_at: new Date().toISOString(),
+            claim,
+            theorem,
+          }),
+        );
+      }
+
       setMessage({
         tone: "ok",
         text: data.lean_verified
           ? "Demo certificate issued with Lean verification."
-          : "Demo certificate issued (Lean not required for this local demo).",
+          : "Demo certificate issued without Lean (local demo mode).",
       });
     } catch (err) {
       setResult(null);
-      const text =
-        err instanceof ApiError
-          ? err.message
-          : "Failed to issue demo certificate.";
       setMessage({
         tone: "error",
         text:
-          text +
-          " If Lean is required by the API defaults, keep allow_unverified: true and require_lean: false for local demos, or install Lean and set require_lean: true.",
+          err instanceof ApiError
+            ? err.message
+            : "Failed to issue demo certificate.",
       });
     } finally {
       setBusy(false);
     }
+  }
+
+  function downloadJson() {
+    if (!result) return;
+    const blob = new Blob([JSON.stringify(result, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${result.certificate_id ?? "certificate"}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   const certificate = result?.certificate;
@@ -63,25 +135,24 @@ export default function CertificatesPage() {
 
   return (
     <>
-      <StudioNav active="certificates" />
+      <StudioNav active="certificates" contextLabel={contextLabel} />
       <main className="studio-main">
         <h1>Certificates</h1>
         <p className="lede">
-          Issue and inspect the agent-policy demo certificate against{" "}
-          <code>{getApiUrl()}</code>.
+          Issue the agent-policy demo certificate and keep a local history of
+          what you issued in this browser.
         </p>
 
         <section className="panel" aria-labelledby="issue-heading">
-          <h2 id="issue-heading">Demo issue</h2>
-          <p className="note">
-            Local demo posts{" "}
-            <code>
-              {`{ allow_unverified: true, require_lean: false }`}
-            </code>{" "}
-            so issuance works without a Lean toolchain. Production-style checks
-            should set <code>require_lean: true</code> and run an independent
-            Lean verify.
-          </p>
+          <h2 id="issue-heading">Issue demo certificate</h2>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={requireLean}
+              onChange={(e) => setRequireLean(e.target.checked)}
+            />
+            Require Lean verification (needs lake on the API host)
+          </label>
           <div className="form-actions">
             <button
               type="button"
@@ -91,6 +162,11 @@ export default function CertificatesPage() {
             >
               {busy ? "Issuing…" : "Issue demo certificate"}
             </button>
+            {result && (
+              <button type="button" className="btn" onClick={downloadJson}>
+                Download JSON
+              </button>
+            )}
           </div>
           {message && (
             <p className={`status status--${message.tone}`} role="status">
@@ -101,7 +177,7 @@ export default function CertificatesPage() {
 
         {result && (
           <section className="panel" aria-labelledby="result-heading">
-            <h2 id="result-heading">Issued certificate</h2>
+            <h2 id="result-heading">Latest issue</h2>
             <dl className="cert-summary">
               <div>
                 <dt>Certificate ID</dt>
@@ -109,7 +185,7 @@ export default function CertificatesPage() {
               </div>
               <div>
                 <dt>Root hash</dt>
-                <dd>{result.root_hash ?? "—"}</dd>
+                <dd className="mono-break">{result.root_hash ?? "—"}</dd>
               </div>
               <div>
                 <dt>Lean verified</dt>
@@ -137,16 +213,31 @@ export default function CertificatesPage() {
           </section>
         )}
 
-        {!result && (
-          <section className="panel" aria-labelledby="info-heading">
-            <h2 id="info-heading">What you get</h2>
-            <p className="note" style={{ marginBottom: 0 }}>
-              The demo bundle includes <code>certificate.json</code>, provenance
-              edges, HMAC signatures, and a verification report. Use this page
-              to confirm the API issuer path before wiring Lean-gated CI.
+        <section className="panel" aria-labelledby="history-heading">
+          <h2 id="history-heading">Issued in this browser</h2>
+          {history.length === 0 ? (
+            <p className="note empty-hint" style={{ marginBottom: 0 }}>
+              No certificates issued from this browser yet.
             </p>
-          </section>
-        )}
+          ) : (
+            <ul className="project-list">
+              {history.map((item) => (
+                <li key={item.certificate_id}>
+                  <span className="name">
+                    {item.theorem ?? item.certificate_id.slice(0, 8)}
+                    {item.lean_verified ? " · lean" : " · unverified"}
+                  </span>
+                  <span className="meta">
+                    {new Date(item.issued_at).toLocaleString()}
+                    {item.claim ? ` — ${item.claim}` : ""}
+                    <br />
+                    <span className="mono-break">{item.root_hash}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </main>
     </>
   );

@@ -17,6 +17,7 @@ from sqlalchemy import text
 
 from formal_api.auth import PrincipalDep
 from formal_api.logging_config import configure_logging
+from formal_api.routes.agents import router as agents_router
 from formal_api.routes.artifacts import router as artifacts_router
 from formal_api.routes.blobs import router as blobs_router
 from formal_api.routes.identity import router as identity_router
@@ -65,6 +66,7 @@ def _create_app(settings: Settings) -> FastAPI:
     application.include_router(artifacts_router)
     application.include_router(identity_router)
     application.include_router(blobs_router)
+    application.include_router(agents_router)
     return application
 
 

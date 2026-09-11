@@ -1,8 +1,7 @@
 export function getApiUrl(): string {
-  return (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(
-    /\/$/,
-    "",
-  );
+  // Always same-origin: Next.js rewrites /platform-api/* → the real API.
+  // Avoids Windows localhost↔IPv6 issues and SSR/client hydration mismatches.
+  return "/platform-api";
 }
 
 export class ApiError extends Error {
@@ -37,10 +36,15 @@ export async function apiFetch<T>(
     response = await fetch(url, {
       ...init,
       headers,
+      signal: init?.signal ?? AbortSignal.timeout(15_000),
     });
-  } catch {
+  } catch (err) {
+    const detail =
+      err instanceof Error && err.name === "TimeoutError"
+        ? "timed out"
+        : "unreachable";
     throw new ApiError(
-      `Cannot reach API at ${getApiUrl()}. Is the Formal Platform API running?`,
+      `Cannot reach API at ${getApiUrl()} (${detail}). Is the Formal Platform API running?`,
     );
   }
 

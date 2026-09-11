@@ -39,3 +39,39 @@ export type DemoCertificateIssue = {
   certificate?: Record<string, unknown>;
   verification?: Record<string, unknown>;
 };
+
+export type AgentRunSummary = {
+  run_id: string;
+  graph: string;
+  status: string;
+  pending_human_review?: boolean;
+  updated_at?: string | null;
+  created_at?: string | null;
+};
+
+export type AgentRun = {
+  run_id: string;
+  organization_id: string;
+  workspace_id: string;
+  project_id: string;
+  graph:
+    | "problem_modelling"
+    | "formalization"
+    | "proof"
+    | "certification"
+    | string;
+  status: string;
+  problem_text?: string;
+  entities: Record<string, unknown>[];
+  assumptions: Record<string, unknown>[];
+  goals: Record<string, unknown>[];
+  claims: Record<string, unknown>[];
+  lean_skeleton?: string | null;
+  candidate_proof?: Record<string, unknown> | null;
+  lean_verified?: boolean;
+  certificate_ready?: boolean;
+  pending_human_review?: boolean;
+  interrupt_node?: string | null;
+  history: string[];
+  error?: string | null;
+};

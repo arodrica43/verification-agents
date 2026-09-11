@@ -84,6 +84,25 @@ async def create_organization(
     return payload
 
 
+@router.get("/organizations")
+async def list_my_organizations(
+    session: SessionDep,
+    principal: PrincipalDep,
+) -> dict[str, Any]:
+    """List organizations the caller belongs to (no UUID guessing required)."""
+    store = IdentityStore(session)
+    items = await store.list_organizations_for_principal(principal.principal_id)
+    return {"items": [o.model_dump(mode="json") for o in items]}
+
+
+@router.get("/me")
+async def me(principal: PrincipalDep) -> dict[str, Any]:
+    return {
+        "principal_id": principal.principal_id,
+        "principal_type": principal.principal_type,
+    }
+
+
 @router.post("/workspaces")
 async def create_workspace(
     body: WorkspaceBody,
@@ -165,6 +184,28 @@ async def create_project(
     except FormalPlatformError as exc:
         status = 401 if exc.code.value == "unauthorized" else 400
         raise HTTPException(status_code=status, detail=exc.to_dict()) from exc
+    return project.model_dump(mode="json")
+
+
+@router.get("/projects/{project_id}")
+async def get_project(
+    project_id: str,
+    session: SessionDep,
+    principal: PrincipalDep,
+) -> dict[str, Any]:
+    store = IdentityStore(session)
+    project = await store.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail={"code": "not_found"})
+    await set_rls_organization(session, project.organization_id)
+    try:
+        await store.authorize(
+            organization_id=project.organization_id,
+            principal_id=principal.principal_id,
+            workspace_id=project.workspace_id,
+        )
+    except FormalPlatformError as exc:
+        raise HTTPException(status_code=401, detail=exc.to_dict()) from exc
     return project.model_dump(mode="json")
 
 

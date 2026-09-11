@@ -18,6 +18,7 @@ dependencies = [
   "formal-certificate-sdk",
   "formal-certificate-service",
   "formal-store",
+  "formal-agent-core",
   "python-multipart>=0.0.9",
   "cryptography>=43",
 ]

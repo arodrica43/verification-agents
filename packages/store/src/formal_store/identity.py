@@ -144,6 +144,27 @@ class IdentityStore:
             id=row.id, name=row.name, slug=row.slug, created_at=row.created_at
         )
 
+    async def list_organizations_for_principal(
+        self, principal_id: str
+    ) -> list[Organization]:
+        stmt = (
+            select(OrganizationRow)
+            .join(
+                MembershipRow,
+                MembershipRow.organization_id == OrganizationRow.id,
+            )
+            .where(MembershipRow.principal_id == principal_id)
+            .distinct()
+            .order_by(OrganizationRow.name)
+        )
+        rows = (await self._session.execute(stmt)).scalars().all()
+        return [
+            Organization(
+                id=r.id, name=r.name, slug=r.slug, created_at=r.created_at
+            )
+            for r in rows
+        ]
+
     async def list_workspaces(self, organization_id: str) -> list[Workspace]:
         stmt = select(WorkspaceRow).where(WorkspaceRow.organization_id == organization_id)
         rows = (await self._session.execute(stmt)).scalars().all()
@@ -157,6 +178,20 @@ class IdentityStore:
             )
             for r in rows
         ]
+
+    async def get_project(self, project_id: str) -> Project | None:
+        row = await self._session.get(ProjectRow, project_id)
+        if row is None:
+            return None
+        return Project(
+            id=row.id,
+            organization_id=row.organization_id,
+            workspace_id=row.workspace_id,
+            name=row.name,
+            description=row.description,
+            status=ProjectStatus(row.status),
+            created_at=row.created_at,
+        )
 
     async def list_projects(
         self, *, organization_id: str, workspace_id: str
