@@ -117,19 +117,97 @@ async def test_certification_requires_lean_verified() -> None:
 
 
 @pytest.mark.asyncio
-async def test_formalization_skeleton_has_sorry() -> None:
+async def test_formalization_skeleton_states_axioms_not_sorry() -> None:
     graph = build_formalization_graph()
     runner = GraphRunner(graph)
     state = await runner.run(
         _base_state(
             graph=GraphName.FORMALIZATION,
-            claims=[{"id": "claim-safe", "statement": "safety holds", "assumption_ids": ["asm-1"]}],
+            claims=[
+                {
+                    "id": "claim-safe",
+                    "statement": "safety holds",
+                    "assumption_ids": ["asm-1"],
+                }
+            ],
             assumptions=[{"id": "asm-1", "statement": "closed world"}],
         )
     )
     assert state.status == RunStatus.COMPLETED
     assert state.lean_skeleton is not None
-    assert "sorry" in state.lean_skeleton
-    assert "theorem" in state.lean_skeleton
+    assert "sorry" not in state.lean_skeleton
+    assert "axiom" in state.lean_skeleton
     assert state.needs_independent_verification is True
     assert state.lean_verified is False
+
+
+FACTORY_PROBLEM = (
+    "We are working in a pre-cooked food factory. We have 3 machines. "
+    "One machine produces solid and liquid products, and distributes them into "
+    "the two other packing machines, so one handles the liquids and the other "
+    "the solids. Every machine has a thermostat, a production speed "
+    "(production or packing speed), and the type of product they are handling. "
+    "Types of products can be solid-a, solid-b and solid-c for solids, and "
+    "liquid-a and liquid-b. As each machine has a small buffer while processing "
+    "products, we have also buffer size for each machine. Each product has its "
+    "own temperature too. There's a group of workers that can work with the "
+    "machines, by turning-on, off and changing the machine parameters at any "
+    "moment. We must ensure that temperature of machines behaves accordingly "
+    "to the product temperature initially."
+)
+
+
+@pytest.mark.asyncio
+async def test_factory_modelling_extracts_meaningful_domain() -> None:
+    graph = build_problem_modelling_graph()
+    runner = GraphRunner(graph, checkpoints=InMemoryCheckpointStore())
+    state = await runner.run(_base_state(problem_text=FACTORY_PROBLEM))
+
+    assert state.status == RunStatus.COMPLETED
+    names = {str(e.get("name", "")).lower() for e in state.entities}
+    kinds = {str(e.get("kind")) for e in state.entities}
+    # Must not treat sentence starters as entities
+    assert "we" not in names
+    assert "every" not in names
+    assert "one" not in names
+    assert "types" not in names
+    assert "component" in kinds
+    assert any("machine" in n for n in names)
+    assert any("worker" in n for n in names)
+    assert any("product" in n for n in names)
+
+    statements = [str(a.get("statement", "")).lower() for a in state.assumptions]
+    assert statements
+    assert not any("behaves according to declared policy" in s for s in statements)
+    assert any("thermostat" in s or "attribute" in s for s in statements)
+    assert any("solid-a" in s or "product kind" in s for s in statements)
+
+    goal_text = " ".join(str(g.get("statement", "")).lower() for g in state.goals)
+    assert "temperature" in goal_text
+
+
+@pytest.mark.asyncio
+async def test_factory_pipeline_lean_model() -> None:
+    store = InMemoryCheckpointStore()
+    modelled = await GraphRunner(
+        build_problem_modelling_graph(), checkpoints=store
+    ).run(_base_state(problem_text=FACTORY_PROBLEM))
+
+    formal = await GraphRunner(build_formalization_graph(), checkpoints=store).run(
+        _base_state(
+            graph=GraphName.FORMALIZATION,
+            problem_text=FACTORY_PROBLEM,
+            entities=modelled.entities,
+            assumptions=modelled.assumptions,
+            goals=modelled.goals,
+            claims=modelled.claims,
+            data=modelled.data,
+        )
+    )
+    skel = formal.lean_skeleton or ""
+    assert "inductive ProductKind" in skel
+    assert "solidA" in skel or "solid_a" in skel or "solidA" in skel
+    assert "structure Machine" in skel
+    assert "thermostatMatchesProduct" in skel
+    assert "sorry" not in skel
+    assert formal.lean_verified is False

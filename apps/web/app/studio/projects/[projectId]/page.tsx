@@ -87,12 +87,18 @@ export default function ProjectStudioPage() {
         body: JSON.stringify(body),
       });
       setLatest(run);
+      const failed = run.status === "failed";
       setMessage({
-        tone: "ok",
+        tone: failed ? "error" : "ok",
         text:
           run.status === "interrupted"
             ? `Paused for review at ${run.interrupt_node ?? "gate"}.`
-            : `Finished ${graph} (${run.status}).`,
+            : failed
+              ? run.error ||
+                (graph === "certification"
+                  ? "Certification blocked: Lean has not verified the proof obligations yet (axioms/stubs are not proofs)."
+                  : `Finished ${graph} (failed).`)
+              : `Finished ${graph} (${run.status}).`,
       });
       await refresh();
     } catch (err) {
@@ -214,12 +220,25 @@ export default function ProjectStudioPage() {
                 {latest.entities.length > 0 && (
                   <>
                     <h3 className="subhead">Entities</h3>
-                    <ul className="feature-list">
-                      {latest.entities.map((e) => (
-                        <li key={String(e.id)} className="on">
-                          {String(e.name ?? e.id)}
-                        </li>
-                      ))}
+                    <ul className="project-list">
+                      {latest.entities.map((e) => {
+                        const attrs = Array.isArray(e.attributes)
+                          ? (e.attributes as unknown[]).map(String)
+                          : [];
+                        return (
+                          <li key={String(e.id)}>
+                            <span className="name">
+                              {String(e.name ?? e.id)}
+                              {e.kind ? ` · ${String(e.kind)}` : ""}
+                            </span>
+                            <span className="meta">
+                              {attrs.length
+                                ? `attrs: ${attrs.join(", ")}`
+                                : String(e.notes ?? "")}
+                            </span>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </>
                 )}

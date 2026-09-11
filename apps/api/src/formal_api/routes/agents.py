@@ -151,6 +151,7 @@ async def start_agent_run(
         lean_skeleton=seed.lean_skeleton if seed else None,
         candidate_proof=seed.candidate_proof if seed else None,
         lean_verified=body.lean_verified or (seed.lean_verified if seed else False),
+        data=dict(seed.data) if seed else {},
         status=RunStatus.PENDING,
     )
     if body.graph == GraphName.PROBLEM_MODELLING and not state.problem_text.strip():

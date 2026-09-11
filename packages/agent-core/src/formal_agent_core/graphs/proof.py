@@ -1,4 +1,4 @@
-"""Proof graph stub — emits candidate proofs only; never claims Lean success."""
+"""Proof graph — packages formalization as an unverified candidate obligation."""
 
 from __future__ import annotations
 
@@ -17,16 +17,18 @@ async def propose_candidate_proof(state: AgentGraphState) -> NodeResult:
     """
     skeleton = state.lean_skeleton or ""
     claims = state.claims or []
+    uses_axiom = "axiom " in skeleton and "sorry" not in skeleton
     candidate: dict[str, Any] = {
         "kind": "candidate_proof",
         "status": "unverified",
         "backend": "lean4",
-        "tactics": ["sorry"],
+        "tactics": ["axiom_obligation"] if uses_axiom else ["sorry"],
         "source_skeleton": skeleton,
         "claim_ids": [c.get("id") for c in claims if isinstance(c, dict)],
         "notes": (
-            "Agent-generated candidate only. Must be checked by an independent "
-            "Lean kernel session before any certificate issuance."
+            "Agent-generated domain model and proof obligations only. "
+            "Axioms/stubs are not proofs. An independent Lean kernel session must "
+            "discharge obligations before certificate issuance."
         ),
     }
     return NodeResult(
