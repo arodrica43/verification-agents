@@ -6,7 +6,6 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-
 _STOPWORDS = frozenset(
     {
         "a",
@@ -167,13 +166,6 @@ _STOPWORDS = frozenset(
         "cooked",
         "food",
         "factory",
-        "too",
-        "also",
-        "any",
-        "them",
-        "they",
-        "are",
-        "being",
     }
 )
 
@@ -326,9 +318,8 @@ def _extract_product_kinds(text: str) -> list[str]:
         for part in parts:
             label = part.strip().lower().strip(".")
             label = re.sub(r"^(?:and|or)\s+", "", label)
-            if re.fullmatch(r"(?:solid|liquid)-[a-z0-9]+", label):
-                if label not in kinds:
-                    kinds.append(label)
+            if re.fullmatch(r"(?:solid|liquid)-[a-z0-9]+", label) and label not in kinds:
+                kinds.append(label)
     if not kinds:
         for label in re.findall(r"\b((?:solid|liquid)-[a-z0-9]+)\b", text.lower()):
             if label not in kinds:
@@ -512,17 +503,15 @@ def _add_entity(
     if lookup in _STOPWORDS:
         return
     # Reject multiword junk like "temperature of machine" unless intentional
-    if any(w.lower() in {"of", "with", "the", "for", "as", "by"} for w in words):
-        # Allow only curated role names
-        if lookup not in {
-            "producer machine",
-            "liquid packing machine",
-            "solid packing machine",
-            "packing machine",
-            "safety monitor",
-            "agent policy",
-        }:
-            return
+    if any(w.lower() in {"of", "with", "the", "for", "as", "by"} for w in words) and lookup not in {
+        "producer machine",
+        "liquid packing machine",
+        "solid packing machine",
+        "packing machine",
+        "safety monitor",
+        "agent policy",
+    }:
+        return
 
     if lookup not in bag:
         bag[lookup] = {
@@ -694,11 +683,9 @@ def build_domain_model(problem_text: str) -> DomainModel:
             continue
         # Prefer "Safety Monitor" over bare "Monitor"; "Agent Policy" over "Policy"
         if name in {"monitor", "policy", "agent"} and any(
-            name in n and n != name for n in bag
+            name in k and k != name for k in bag
         ):
-            # keep if no more specific exists in cleaned later — skip generic now
-            if any(name in k and k != name for k in bag):
-                continue
+            continue
         if name in seen_names:
             continue
         seen_names.add(name)
@@ -758,9 +745,10 @@ def assumptions_from_model(model: DomainModel) -> list[dict[str, Any]]:
     for rel in model.relations:
         add(str(rel["statement"]))
 
-    if any(e.get("kind") == "actor" for e in model.entities):
-        if not any("worker" in str(a["statement"]).lower() for a in assumptions):
-            add("Human operators may change controllable parameters during operation.")
+    if any(e.get("kind") == "actor" for e in model.entities) and not any(
+        "worker" in str(a["statement"]).lower() for a in assumptions
+    ):
+        add("Human operators may change controllable parameters during operation.")
 
     if any(
         "buffer" in " ".join(str(a) for a in (e.get("attributes") or []))
