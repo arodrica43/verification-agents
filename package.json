@@ -1,0 +1,11 @@
+{
+  "name": "formal-platform",
+  "private": true,
+  "description": "Formal Platform monorepo — web workspace reserved for Phase 4",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "lint": "echo \"Web workspace not initialized yet (Phase 4)\""
+  }
+}

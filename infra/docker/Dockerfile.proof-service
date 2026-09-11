@@ -1,0 +1,32 @@
+# syntax=docker/dockerfile:1
+FROM python:3.12-slim-bookworm
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates git \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install elan + Lean toolchain used by demo project
+RUN curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+ENV PATH="/root/.elan/bin:${PATH}"
+
+COPY packages/shared /app/packages/shared
+COPY packages/schemas /app/packages/schemas
+COPY services/proof-service /app/services/proof-service
+COPY lean/examples/agent-policy/lean-toolchain /tmp/lean-toolchain
+
+RUN lean_toolchain="$(cat /tmp/lean-toolchain)" \
+  && elan toolchain install "${lean_toolchain#leanprover/lean4:}" || elan toolchain install "$(cat /tmp/lean-toolchain)" \
+  && elan default "$(cat /tmp/lean-toolchain)"
+
+RUN pip install --no-cache-dir \
+  /app/packages/shared \
+  /app/packages/schemas \
+  /app/services/proof-service \
+  "uvicorn[standard]>=0.32"
+
+ENV PROOF_SERVICE_HOST=0.0.0.0
+ENV PROOF_SERVICE_PORT=8001
+
+EXPOSE 8001
+CMD ["python", "-m", "formal_proof_service"]

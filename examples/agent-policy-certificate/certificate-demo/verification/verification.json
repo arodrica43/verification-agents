@@ -1,0 +1,1 @@
+{"backend":"lean4","checked_at":"2026-09-11T10:22:40.169779Z","note":"Independent lake build must succeed for production issuance. Demo bundle records lean_verified flag from issuer environment.","success":false,"theorem":"AgentPolicy.privileged_action_requires_authorization"}

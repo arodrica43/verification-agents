@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Install workspace
+        run: uv sync --all-extras
+      - name: Ruff
+        run: uv run ruff check packages services apps/api tests scripts
+      - name: Unit tests
+        run: uv run pytest -q -m "not lean and not integration"
+
+  lean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install elan
+        run: |
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Build agent-policy demo
+        working-directory: lean/examples/agent-policy
+        run: |
+          elan toolchain install "$(cat lean-toolchain)"
+          lake build
