@@ -51,6 +51,7 @@ Thumbs.db
 *.key
 secrets/
 data/
+.data/
 .minio/
 postgres-data/
 
